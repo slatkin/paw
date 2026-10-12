@@ -24,6 +24,32 @@ premultiply(uint8_t r, uint8_t g, uint8_t b, uint8_t a)
     return ((uint32_t)a << 24) | (pr << 16) | (pg << 8) | pb;
 }
 
+/*
+ * Wrap-safe check that 'width * height * bpp' fits in size_t and does
+ * not exceed 'max_bytes'. On success stores the product in '*out'.
+ *
+ * Uses division instead of multiplication so that 32-bit width and
+ * height values from hostile input cannot overflow size_t.
+ */
+static bool
+checked_size(
+    uint32_t width, uint32_t height, uint32_t bpp, size_t max_bytes,
+    size_t *out)
+{
+    if (width == 0 || height == 0 || bpp == 0)
+        return false;
+
+    if (width > max_bytes / bpp)
+        return false;
+
+    const size_t row = (size_t)width * bpp;
+    if (height > max_bytes / row)
+        return false;
+
+    *out = row * height;
+    return true;
+}
+
 void
 kitty_image_store_init(struct kitty_image_store *store)
 {
@@ -191,21 +217,24 @@ decode_png(
         return false;
     }
 
-    const int width = image.width;
-    const int height = image.height;
-
-    if (width == 0 || height == 0 ||
-        (uint64_t)width * height * 4 > max_bytes)
-    {
+    /* Wrap-safe: image.width/height can be up to 2^32-1 on hostile
+     * input, and width * height * 4 can overflow size_t. */
+    size_t rgba_size = 0;
+    if (!checked_size(image.width, image.height, 4, max_bytes, &rgba_size)) {
         png_image_free(&image);
         *error = "EINVAL:image too large";
         return false;
     }
 
+    const int width = (int)image.width;
+    const int height = (int)image.height;
+    const size_t count = rgba_size / 4;
+
     image.format = PNG_FORMAT_RGBA;
 
-    /* Count is bounded by the quota check above. */
-    uint32_t *pixels = xmalloc((size_t)width * height * 4);
+    /* For 8-bit RGBA the row stride is width * 4, so rgba_size is
+     * exactly the buffer size. */
+    uint32_t *pixels = xmalloc(rgba_size);
 
     if (!png_image_finish_read(&image, NULL, pixels, 0, NULL)) {
         free(pixels);
@@ -216,7 +245,6 @@ decode_png(
 
     png_image_free(&image);
 
-    const size_t count = (size_t)width * height;
     for (size_t i = 0; i < count; i++) {
         const uint8_t *px = (const uint8_t *)&pixels[i];
         pixels[i] = premultiply(px[0], px[1], px[2], px[3]);
@@ -224,6 +252,7 @@ decode_png(
 
     out->width = width;
     out->height = height;
+    out->size = rgba_size;
     out->data = pixels;
     return true;
 }
@@ -243,6 +272,7 @@ kitty_image_decode(
         cmd->format == KITTY_FORMAT_RGBA ? 4 : 0;
 
     size_t raw_expected = 0;
+    size_t rgba_size = 0;
     size_t inflate_cap = max_bytes;
 
     if (!png) {
@@ -255,13 +285,22 @@ kitty_image_decode(
             return false;
         }
 
-        /* The stored form is always RGBA. */
-        if ((uint64_t)cmd->width * cmd->height * 4 > max_bytes) {
+        /* The stored form is always RGBA. checked_size() is
+         * wrap-safe. */
+        if (!checked_size(cmd->width, cmd->height, 4, max_bytes, &rgba_size)) {
             *error = "EINVAL:image too large";
             return false;
         }
 
-        raw_expected = (size_t)cmd->width * cmd->height * bpp;
+        /* The raw size (3 or 4 bytes per pixel) is at most the RGBA
+         * size, but check it too so that every product is wrap-safe. */
+        if (!checked_size(cmd->width, cmd->height, (uint32_t)bpp,
+                          SIZE_MAX, &raw_expected))
+        {
+            *error = "EINVAL:image too large";
+            return false;
+        }
+
         inflate_cap = raw_expected;
     }
 
@@ -293,8 +332,8 @@ kitty_image_decode(
     } else if (raw_len != raw_expected) {
         *error = "EINVAL:wrong data length";
     } else if (cmd->format == KITTY_FORMAT_RGB) {
-        const size_t count = (size_t)cmd->width * cmd->height;
-        out->data = xmalloc(count * 4);
+        const size_t count = rgba_size / 4;
+        out->data = xmalloc(rgba_size);
         for (size_t i = 0; i < count; i++) {
             out->data[i] = 0xff000000u |
                 ((uint32_t)raw[3 * i + 0] << 16) |
@@ -303,10 +342,11 @@ kitty_image_decode(
         }
         out->width = cmd->width;
         out->height = cmd->height;
+        out->size = rgba_size;
         ok = true;
     } else {
-        const size_t count = (size_t)cmd->width * cmd->height;
-        out->data = xmalloc(count * 4);
+        const size_t count = rgba_size / 4;
+        out->data = xmalloc(rgba_size);
         for (size_t i = 0; i < count; i++) {
             out->data[i] = premultiply(
                 raw[4 * i + 0], raw[4 * i + 1],
@@ -314,6 +354,7 @@ kitty_image_decode(
         }
         out->width = cmd->width;
         out->height = cmd->height;
+        out->size = rgba_size;
         ok = true;
     }
 
@@ -325,7 +366,6 @@ kitty_image_decode(
         return false;
     }
 
-    out->size = (size_t)out->width * out->height * 4;
     out->pix = pixman_image_create_bits(
         PIXMAN_a8r8g8b8, out->width, out->height, out->data,
         out->width * 4);
@@ -338,6 +378,29 @@ kitty_image_decode(
     }
 
     return true;
+}
+
+UNITTEST
+{
+    /*
+     * 2^31 x 2^31 must fail: width * height * 4 wraps to 0 in 64-bit
+     * arithmetic. The guard must reject it before any allocation.
+     */
+    for (int pass = 0; pass < 2; pass++) {
+        struct kitty_image img;
+        struct kitty_command cmd;
+        kitty_command_init(&cmd);
+        cmd.format = pass == 0 ? KITTY_FORMAT_RGBA : KITTY_FORMAT_RGB;
+        cmd.has_width = cmd.has_height = true;
+        cmd.width = 2147483648u;
+        cmd.height = 2147483648u;
+
+        const char *error = NULL;
+        xassert(!kitty_image_decode(
+                    &cmd, "", 0, KITTY_IMAGE_QUOTA, &img, &error));
+        xassert(error != NULL);
+        xassert(img.data == NULL);
+    }
 }
 
 UNITTEST
