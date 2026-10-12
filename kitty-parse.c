@@ -247,7 +247,9 @@ parse_control_data(const char *data, size_t len, struct kitty_command *cmd)
             break;
 
         case 'd':
-            if (value_len != 1)
+            /* A NUL byte cannot be told from an absent d key, so a=d
+             * would delete every visible placement. Reject it. */
+            if (value_len != 1 || value[0] == '\0')
                 return false;
             cmd->delete_spec = value[0];
             break;
@@ -339,6 +341,24 @@ UNITTEST
     kitty_command_init(&cmd);
     xassert(parse_control_data(unknown, sizeof(unknown) - 1, &cmd));
     xassert(cmd.id.set && cmd.id.value == 5);
+}
+
+UNITTEST
+{
+    /*
+     * A NUL delete selector is rejected: it cannot be told from an
+     * absent d key, and a=d would then delete every visible placement.
+     */
+    struct kitty_command cmd;
+    static const char nul[] = {'a', '=', 'd', ',', 'd', '=', '\0'};
+    kitty_command_init(&cmd);
+    xassert(!parse_control_data(nul, sizeof(nul), &cmd));
+
+    /* An absent d key still defaults to 'a' in the delete code. */
+    static const char absent[] = "a=d,i=1";
+    kitty_command_init(&cmd);
+    xassert(parse_control_data(absent, sizeof(absent) - 1, &cmd));
+    xassert(cmd.delete_spec == '\0');
 }
 
 UNITTEST
