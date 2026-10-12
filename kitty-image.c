@@ -31,8 +31,8 @@ premultiply(uint8_t r, uint8_t g, uint8_t b, uint8_t a)
  * Uses division instead of multiplication so that 32-bit width and
  * height values from hostile input cannot overflow size_t.
  */
-static bool
-checked_size(
+bool
+kitty_checked_size(
     uint32_t width, uint32_t height, uint32_t bpp, size_t max_bytes,
     size_t *out)
 {
@@ -260,7 +260,9 @@ decode_png(
     /* Wrap-safe: image.width/height can be up to 2^32-1 on hostile
      * input, and width * height * 4 can overflow size_t. */
     size_t rgba_size = 0;
-    if (!checked_size(image.width, image.height, 4, max_bytes, &rgba_size)) {
+    if (!kitty_checked_size(
+            image.width, image.height, 4, max_bytes, &rgba_size))
+    {
         png_image_free(&image);
         *error = "EINVAL:image too large";
         return false;
@@ -298,9 +300,9 @@ decode_png(
 }
 
 bool
-kitty_image_decode(
+kitty_image_decode_raw(
     const struct kitty_command *cmd,
-    const char *payload, size_t payload_len,
+    const uint8_t *data, size_t len,
     size_t max_bytes,
     struct kitty_image *out, const char **error)
 {
@@ -325,17 +327,19 @@ kitty_image_decode(
             return false;
         }
 
-        /* The stored form is always RGBA. checked_size() is
+        /* The stored form is always RGBA. kitty_checked_size() is
          * wrap-safe. */
-        if (!checked_size(cmd->width, cmd->height, 4, max_bytes, &rgba_size)) {
+        if (!kitty_checked_size(
+                cmd->width, cmd->height, 4, max_bytes, &rgba_size))
+        {
             *error = "EINVAL:image too large";
             return false;
         }
 
         /* The raw size (3 or 4 bytes per pixel) is at most the RGBA
          * size, but check it too so that every product is wrap-safe. */
-        if (!checked_size(cmd->width, cmd->height, (uint32_t)bpp,
-                          SIZE_MAX, &raw_expected))
+        if (!kitty_checked_size(cmd->width, cmd->height, (uint32_t)bpp,
+                                SIZE_MAX, &raw_expected))
         {
             *error = "EINVAL:image too large";
             return false;
@@ -344,21 +348,13 @@ kitty_image_decode(
         inflate_cap = raw_expected;
     }
 
-    size_t decoded_len = 0;
-    char *decoded = base64_decode(payload, &decoded_len);
-    if (decoded == NULL) {
-        *error = "EINVAL:invalid base64";
-        return false;
-    }
-
-    uint8_t *raw = (uint8_t *)decoded;
-    size_t raw_len = decoded_len;
+    const uint8_t *raw = data;
+    size_t raw_len = len;
+    uint8_t *inflated = NULL;
 
     if (cmd->compression == KITTY_COMPRESSION_ZLIB) {
         size_t inflated_len = 0;
-        uint8_t *inflated = inflate_zlib(
-            raw, raw_len, inflate_cap, &inflated_len, error);
-        free(decoded);
+        inflated = inflate_zlib(data, len, inflate_cap, &inflated_len, error);
         if (inflated == NULL)
             return false;
         raw = inflated;
@@ -398,7 +394,7 @@ kitty_image_decode(
         ok = true;
     }
 
-    free(raw);
+    free(inflated);
 
     if (!ok) {
         free(out->data);
@@ -418,6 +414,28 @@ kitty_image_decode(
     }
 
     return true;
+}
+
+bool
+kitty_image_decode(
+    const struct kitty_command *cmd,
+    const char *payload, size_t payload_len,
+    size_t max_bytes,
+    struct kitty_image *out, const char **error)
+{
+    memset(out, 0, sizeof(*out));
+
+    size_t decoded_len = 0;
+    char *decoded = base64_decode(payload, &decoded_len);
+    if (decoded == NULL) {
+        *error = "EINVAL:invalid base64";
+        return false;
+    }
+
+    const bool ok = kitty_image_decode_raw(
+        cmd, (const uint8_t *)decoded, decoded_len, max_bytes, out, error);
+    free(decoded);
+    return ok;
 }
 
 UNITTEST

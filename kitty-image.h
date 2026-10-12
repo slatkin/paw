@@ -79,8 +79,9 @@ bool kitty_image_store_add(
 void kitty_image_destroy(struct kitty_image *image);
 
 /*
- * Decode a transmit or query payload and convert it to premultiplied
- * a8r8g8b8. Handles base64, o=z inflate, RGB, RGBA and PNG.
+ * Decode a base64 transmit or query payload and convert it to
+ * premultiplied a8r8g8b8. Handles base64, o=z inflate, RGB, RGBA and
+ * PNG.
  *
  * On success 'out' owns data and pix. On failure returns false and
  * sets *error to a printable error code and text.
@@ -93,3 +94,22 @@ bool kitty_image_decode(
     const char *payload, size_t payload_len,
     size_t max_bytes,
     struct kitty_image *out, const char **error);
+
+/*
+ * As kitty_image_decode(), but for a raw (already base64-decoded)
+ * payload, for example the bytes read from a file or shared memory
+ * object. Does not take ownership of 'data'.
+ */
+bool kitty_image_decode_raw(
+    const struct kitty_command *cmd,
+    const uint8_t *data, size_t len,
+    size_t max_bytes,
+    struct kitty_image *out, const char **error);
+
+/*
+ * Wrap-safe check that 'width * height * bpp' fits in size_t and does
+ * not exceed 'max_bytes'. On success stores the product in '*out'.
+ */
+bool kitty_checked_size(
+    uint32_t width, uint32_t height, uint32_t bpp, size_t max_bytes,
+    size_t *out);

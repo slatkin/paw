@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "kitty-image.h"
+#include "kitty-file.h"
 
 #define LOG_MODULE "kitty-graphics"
 #define LOG_ENABLE_DBG 0
@@ -489,11 +490,59 @@ kitty_reply(struct terminal *term, const struct kitty_command *cmd,
 }
 
 static void
+kitty_transmit(
+    struct terminal *term, const struct kitty_command *cmd,
+    const char *payload, size_t payload_len)
+{
+    struct kitty_image_store *store = kitty_image_store_for(term);
+    const uint32_t id = cmd->has_id
+        ? cmd->id
+        : kitty_image_store_alloc_id(store);
+
+    /*
+     * Direct data is base64 in the escape code. File, temp file and
+     * shared memory read the bytes from the named object (design D4).
+     */
+    struct kitty_image image;
+    const char *error = NULL;
+    bool ok;
+
+    if (cmd->medium == KITTY_MEDIUM_DIRECT) {
+        ok = kitty_image_decode(
+            cmd, payload, payload_len, store->quota, &image, &error);
+    } else {
+        uint8_t *data = NULL;
+        size_t len = 0;
+        ok = kitty_file_load(
+            cmd, payload, payload_len, store->quota, &data, &len, &error);
+        if (ok)
+            ok = kitty_image_decode_raw(
+                cmd, data, len, store->quota, &image, &error);
+        free(data);
+    }
+
+    if (!ok) {
+        kitty_reply(term, cmd, id, false, error);
+        return;
+    }
+
+    image.id = id;
+    image.has_number = cmd->has_number;
+    image.number = cmd->number;
+    if (!kitty_image_store_add(store, &image)) {
+        kitty_image_destroy(&image);
+        kitty_reply(term, cmd, id, false, "EINVAL:image too large");
+        return;
+    }
+
+    kitty_reply(term, cmd, id, true, "OK");
+}
+
+static void
 kitty_handle_transmit(struct terminal *term, const struct kitty_command *cmd,
                       const char *payload, size_t payload_len)
 {
     struct kitty_graphics *kitty = term->kitty;
-    struct kitty_image_store *store = kitty_image_store_for(term);
 
     /*
      * Chunked transfer. A transmit command that arrives while a
@@ -517,13 +566,13 @@ kitty_handle_transmit(struct terminal *term, const struct kitty_command *cmd,
         const struct kitty_command first = kitty->chunk.cmd;
         const uint32_t id = first.has_id
             ? first.id
-            : kitty_image_store_alloc_id(store);
+            : kitty_image_store_alloc_id(kitty_image_store_for(term));
 
         struct kitty_image image;
         const char *error = NULL;
         const bool ok = kitty_image_decode(
-            &first, kitty->chunk.data, kitty->chunk.len, store->quota,
-            &image, &error);
+            &first, kitty->chunk.data, kitty->chunk.len,
+            kitty_image_store_for(term)->quota, &image, &error);
 
         kitty_chunk_reset(kitty);
 
@@ -535,7 +584,7 @@ kitty_handle_transmit(struct terminal *term, const struct kitty_command *cmd,
         image.id = id;
         image.has_number = first.has_number;
         image.number = first.number;
-        if (!kitty_image_store_add(store, &image)) {
+        if (!kitty_image_store_add(kitty_image_store_for(term), &image)) {
             kitty_image_destroy(&image);
             kitty_reply(term, &first, id, false, "EINVAL:image too large");
             return;
@@ -545,10 +594,12 @@ kitty_handle_transmit(struct terminal *term, const struct kitty_command *cmd,
         return;
     }
 
+    /*
+     * File, temp file and shared memory carry their own data, so a
+     * chunked transfer never starts for them.
+     */
     if (cmd->medium != KITTY_MEDIUM_DIRECT) {
-        kitty_reply(
-            term, cmd, cmd->has_id ? cmd->id : 0, false,
-            "EINVAL:unsupported transmission medium");
+        kitty_transmit(term, cmd, payload, payload_len);
         return;
     }
 
@@ -564,29 +615,7 @@ kitty_handle_transmit(struct terminal *term, const struct kitty_command *cmd,
         return;
     }
 
-    const uint32_t id = cmd->has_id
-        ? cmd->id
-        : kitty_image_store_alloc_id(store);
-
-    struct kitty_image image;
-    const char *error = NULL;
-    if (!kitty_image_decode(
-            cmd, payload, payload_len, store->quota, &image, &error))
-    {
-        kitty_reply(term, cmd, id, false, error);
-        return;
-    }
-
-    image.id = id;
-    image.has_number = cmd->has_number;
-    image.number = cmd->number;
-    if (!kitty_image_store_add(store, &image)) {
-        kitty_image_destroy(&image);
-        kitty_reply(term, cmd, id, false, "EINVAL:image too large");
-        return;
-    }
-
-    kitty_reply(term, cmd, id, true, "OK");
+    kitty_transmit(term, cmd, payload, payload_len);
 }
 
 static void
@@ -602,18 +631,26 @@ kitty_handle_query(struct terminal *term, const struct kitty_command *cmd,
     else if (cmd->has_number)
         id = kitty_image_store_alloc_id(store);
 
-    if (cmd->medium != KITTY_MEDIUM_DIRECT) {
-        kitty_reply(
-            term, cmd, id, false, "EINVAL:unsupported transmission medium");
-        return;
-    }
-
     /* Load and check the image data as a transmit would, without
      * storing it. */
     struct kitty_image image;
     const char *error = NULL;
-    const bool ok = kitty_image_decode(
-        cmd, payload, payload_len, store->quota, &image, &error);
+    bool ok;
+
+    if (cmd->medium == KITTY_MEDIUM_DIRECT) {
+        ok = kitty_image_decode(
+            cmd, payload, payload_len, store->quota, &image, &error);
+    } else {
+        uint8_t *data = NULL;
+        size_t len = 0;
+        ok = kitty_file_load(
+            cmd, payload, payload_len, store->quota, &data, &len, &error);
+        if (ok)
+            ok = kitty_image_decode_raw(
+                cmd, data, len, store->quota, &image, &error);
+        free(data);
+    }
+
     if (ok)
         kitty_image_destroy(&image);
 
