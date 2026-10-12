@@ -17,8 +17,9 @@
 
 /*
  * Build (or refresh) the scaled image cache of one placement. Does
- * nothing if the cache is valid for the current cell size. Skips the
- * placement if the cache would exceed the per-screen cache budget.
+ * nothing if the cache is valid for the current cell size. If the cache
+ * would exceed the per-screen cache budget, the "cache" is only a scaled
+ * view of the source image.
  */
 static void
 placement_ensure_cache(
@@ -43,7 +44,11 @@ placement_ensure_cache(
     int display_w, display_h;
     int off_x, off_y;
 
-    if (p->scaled) {
+    /* An unscaled placement keeps its pixel size until the cell size
+     * changes; then it covers the same cells, scaled like c and r. */
+    if (p->scaled || p->cell_width != term->cell_width ||
+        p->cell_height != term->cell_height)
+    {
         const double sx = (double)box_w / p->src_w;
         const double sy = (double)box_h / p->src_h;
         const double s = sx < sy ? sx : sy;
@@ -64,39 +69,14 @@ placement_ensure_cache(
         off_x = off_y = 0;
     }
 
-    size_t bytes;
-    if (!kitty_checked_size(
-            (uint32_t)display_w, (uint32_t)display_h, 4, SIZE_MAX, &bytes))
-    {
-        return;
-    }
-
-    if (bytes > KITTY_PLACEMENT_CACHE_QUOTA)
-        return;
-    if (store->cache_bytes > KITTY_PLACEMENT_CACHE_QUOTA - bytes)
-        return;
-
-    uint32_t *data = xmalloc(bytes);
-    memset(data, 0, bytes);
-
-    pixman_image_t *scaled = pixman_image_create_bits_no_clear(
-        PIXMAN_a8r8g8b8, display_w, display_h, data, display_w * 4);
-    if (scaled == NULL) {
-        free(data);
-        return;
-    }
-
     /* A scratch view of the source rectangle, inside the image data. */
     uint32_t *sub_data =
         p->image->data + (size_t)p->src_y * p->image->width + p->src_x;
     pixman_image_t *sub = pixman_image_create_bits_no_clear(
         PIXMAN_a8r8g8b8, p->src_w, p->src_h,
         sub_data, p->image->width * 4);
-    if (sub == NULL) {
-        pixman_image_unref(scaled);
-        free(data);
+    if (sub == NULL)
         return;
-    }
 
     struct pixman_f_transform fscale;
     pixman_f_transform_init_scale(
@@ -108,11 +88,39 @@ placement_ensure_cache(
     pixman_image_set_transform(sub, &scale);
     pixman_image_set_filter(sub, PIXMAN_FILTER_GOOD, NULL, 0);
 
-    pixman_image_composite32(
-        PIXMAN_OP_SRC, sub, NULL, scaled, 0, 0, 0, 0, 0, 0,
-        display_w, display_h);
+    size_t bytes = 0;
+    uint32_t *data = NULL;
+    pixman_image_t *scaled = NULL;
 
-    pixman_image_unref(sub);
+    if (kitty_checked_size(
+            (uint32_t)display_w, (uint32_t)display_h, 4, SIZE_MAX, &bytes) &&
+        bytes <= KITTY_PLACEMENT_CACHE_QUOTA &&
+        store->cache_bytes <= KITTY_PLACEMENT_CACHE_QUOTA - bytes)
+    {
+        data = xmalloc(bytes);
+        memset(data, 0, bytes);
+
+        scaled = pixman_image_create_bits_no_clear(
+            PIXMAN_a8r8g8b8, display_w, display_h, data, display_w * 4);
+        if (scaled == NULL) {
+            free(data);
+            data = NULL;
+        }
+    }
+
+    if (scaled != NULL) {
+        pixman_image_composite32(
+            PIXMAN_OP_SRC, sub, NULL, scaled, 0, 0, 0, 0, 0, 0,
+            display_w, display_h);
+        pixman_image_unref(sub);
+    } else {
+        /* Over budget: draw straight from the source image. The
+         * transform scales it on every frame, and the cache uses no
+         * memory. */
+        LOG_DBG("scaled image cache over budget, drawing without it");
+        scaled = sub;
+        bytes = 0;
+    }
 
     p->cache_data = data;
     p->cache_pix = scaled;
@@ -964,6 +972,47 @@ UNITTEST
     free(dst);
 
     composed_free(term.composed);
+    kitty_fini(&term);
+    free(term.normal.rows);
+}
+
+UNITTEST
+{
+    /* An unscaled placement keeps its cell span on a cell size change. */
+    struct terminal term;
+    PLACEHOLDER_TERM(term);
+
+    uint32_t *src = xcalloc(16, sizeof(src[0]));
+    for (int i = 0; i < 16; i++)
+        src[i] = 0xffff0000u;
+    struct kitty_image proto = {
+        .id = 42, .width = 4, .height = 4,
+        .data = src, .size = 16 * sizeof(src[0]),
+        .pix = pixman_image_create_bits(PIXMAN_a8r8g8b8, 4, 4, src, 16),
+    };
+    xassert(kitty_image_store_add(kitty_image_store_for(&term), &proto));
+
+    struct kitty_command put;
+    kitty_command_init(&put);
+    put.action = KITTY_ACTION_PUT;
+    put.has_id = true;
+    put.id = 42;
+    xassert(kitty_placement_put(
+                &term, &put,
+                kitty_image_store_find_id(
+                    kitty_image_store_for(&term), 42)) == NULL);
+
+    const struct kitty_placement *p =
+        &tll_front(kitty_placement_store_for(&term)->placements);
+    kitty_render_prepass(&term);
+    xassert(p->cache_w == 4 && p->cache_h == 4);
+
+    term.cell_width = term.cell_height = 8;
+    kitty_cell_size_changed(&term);
+    kitty_render_prepass(&term);
+    xassert(p->cols == 1 && p->rows == 1);
+    xassert(p->cache_w == 8 && p->cache_h == 8);
+
     kitty_fini(&term);
     free(term.normal.rows);
 }
