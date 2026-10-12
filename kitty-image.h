@@ -76,6 +76,13 @@ struct kitty_image *kitty_image_store_find_number(
 uint32_t kitty_image_store_alloc_id(struct kitty_image_store *store);
 
 /*
+ * Remove the image with the given id, if present. Calls the on_remove
+ * callback first, so placements that refer to it are dropped. Returns
+ * false when no such image exists.
+ */
+bool kitty_image_store_delete_id(struct kitty_image_store *store, uint32_t id);
+
+/*
  * Insert a decoded image. Takes ownership of image->data and
  * image->pix. An image with the same id is replaced.
  *

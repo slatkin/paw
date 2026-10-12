@@ -1034,6 +1034,10 @@ render_cell(struct terminal *term, pixman_image_t *pix,
         PIXMAN_OP_SRC, pix, &bg, 1,
         &(pixman_rectangle16_t){x, y, cell_cols * width, height});
 
+    /* Kitty graphics: z < 0 placements are under the glyphs, over the
+     * background (design D6). */
+    kitty_render_underlay(term, pix, row, row_no, col, x, y);
+
     if (cell->attrs.blink && term->blink.fd < 0) {
         /* TODO: use a custom lock for this? */
         mtx_lock(&term->render.workers.lock);

@@ -798,6 +798,11 @@ kitty_handle_apc(struct terminal *term, const char *data, size_t len)
         kitty_handle_put(term, &cmd);
         return;
 
+    case KITTY_ACTION_DELETE:
+        /* Delete sends no reply (spec: Deletion). */
+        kitty_placement_delete(term, &cmd);
+        return;
+
     case KITTY_ACTION_FRAME:
     case KITTY_ACTION_ANIMATE:
     case KITTY_ACTION_COMPOSE:

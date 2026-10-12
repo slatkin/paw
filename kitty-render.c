@@ -13,39 +13,6 @@
 #include "xmalloc.h"
 
 /*
- * Screen row of the placement's first visible row. Returns false when
- * no part of the placement is inside the viewport. The result may be
- * negative: the placement then starts above the viewport and is
- * clipped.
- */
-static bool
-placement_visible_top(
-    struct terminal *term, const struct kitty_placement *p, int *out_top)
-{
-    const int num_rows = term->grid->num_rows;
-    const int view = term->grid->view;
-    const int rows = term->rows;
-
-    if (num_rows == 0)
-        return false;
-
-    const int d = (p->row - view + num_rows) & (num_rows - 1);
-
-    if (d < rows) {
-        *out_top = d;
-        return true;
-    }
-
-    /* Anchor above the viewport, but the placement may reach into it. */
-    if (num_rows - d < p->rows) {
-        *out_top = -(num_rows - d);
-        return true;
-    }
-
-    return false;
-}
-
-/*
  * Build (or refresh) the scaled image cache of one placement. Does
  * nothing if the cache is valid for the current cell size. Skips the
  * placement if the cache would exceed the per-screen cache budget.
@@ -165,29 +132,6 @@ overlay_hidden(struct terminal *term)
         term->interactive_resizing.grid != NULL;
 }
 
-void
-kitty_render_prepass(struct terminal *term)
-{
-    if (term->kitty == NULL || overlay_hidden(term))
-        return;
-
-    struct kitty_placement_store *store = kitty_placement_store_for(term);
-    if (tll_length(store->placements) == 0)
-        return;
-
-    tll_foreach(store->placements, it) {
-        struct kitty_placement *p = &it->item;
-        if (p->virtual_placement || p->z < 0)
-            continue;
-
-        int top;
-        if (!placement_visible_top(term, p, &top))
-            continue;
-
-        placement_ensure_cache(term, store, p);
-    }
-}
-
 static int
 placement_cmp(const void *_a, const void *_b)
 {
@@ -201,6 +145,52 @@ placement_cmp(const void *_a, const void *_b)
     if (a->placement_id != b->placement_id)
         return a->placement_id < b->placement_id ? -1 : 1;
     return 0;
+}
+
+static void
+underlay_push(struct kitty_placement_store *store, struct kitty_placement *p)
+{
+    if (store->underlay_count == store->underlay_size) {
+        size_t new_size =
+            store->underlay_size == 0 ? 8 : store->underlay_size * 2;
+        store->underlay = xrealloc(
+            store->underlay, new_size * sizeof(store->underlay[0]));
+        store->underlay_size = new_size;
+    }
+
+    store->underlay[store->underlay_count++] = p;
+}
+
+void
+kitty_render_prepass(struct terminal *term)
+{
+    if (term->kitty == NULL || overlay_hidden(term))
+        return;
+
+    struct kitty_placement_store *store = kitty_placement_store_for(term);
+    store->underlay_count = 0;
+
+    tll_foreach(store->placements, it) {
+        struct kitty_placement *p = &it->item;
+        if (p->virtual_placement)
+            continue;
+
+        int top;
+        if (!kitty_placement_visible_top(term, p, &top))
+            continue;
+
+        /* The workers never allocate: build every visible cache here
+         * (design D6). */
+        placement_ensure_cache(term, store, p);
+
+        if (p->z < 0)
+            underlay_push(store, p);
+    }
+
+    if (store->underlay_count > 1) {
+        qsort(store->underlay, store->underlay_count,
+              sizeof(store->underlay[0]), placement_cmp);
+    }
 }
 
 void
@@ -226,7 +216,7 @@ kitty_render_overlay(
         if (p->virtual_placement || p->z < 0)
             continue;
         int top;
-        if (!placement_visible_top(term, p, &top))
+        if (!kitty_placement_visible_top(term, p, &top))
             continue;
         order[n++] = p;
     }
@@ -241,7 +231,7 @@ kitty_render_overlay(
             continue;
 
         int top;
-        if (!placement_visible_top(term, p, &top))
+        if (!kitty_placement_visible_top(term, p, &top))
             continue;
 
         const int x =
@@ -289,13 +279,95 @@ kitty_render_overlay(
     free(order);
 }
 
+/*
+ * True when the cell's effective background is the default one. This
+ * is the same test render_cell() uses for transparency (spec: Z-index
+ * layers, the z < -1073741824 rule).
+ */
+static bool
+cell_has_default_bg(const struct terminal *term, const struct cell *cell)
+{
+    switch (cell->attrs.bg_src) {
+    case COLOR_DEFAULT:
+        return true;
+
+    case COLOR_BASE16:
+    case COLOR_BASE256:
+        return term->colors.table[cell->attrs.bg] == term->colors.bg;
+
+    case COLOR_RGB:
+        return cell->attrs.bg == term->colors.bg;
+    }
+
+    return false;
+}
+
 void
 kitty_render_underlay(
     struct terminal *term, pixman_image_t *pix,
     const struct row *row, int row_no, int col, int x, int y)
 {
-    /* z < 0 placements are added by a later task (hook A). */
-    (void)term; (void)pix; (void)row; (void)row_no; (void)col; (void)x; (void)y;
+    if (term->kitty == NULL || overlay_hidden(term))
+        return;
+
+    struct kitty_placement_store *store = kitty_placement_store_for(term);
+    if (store->underlay_count == 0)
+        return;
+
+    const bool default_bg = cell_has_default_bg(term, &row->cells[col]);
+    const int cell_w = term->cell_width;
+    const int cell_h = term->cell_height;
+
+    for (size_t i = 0; i < store->underlay_count; i++) {
+        struct kitty_placement *p = store->underlay[i];
+
+        if (p->cache_pix == NULL)
+            continue;
+        if (col < p->col || col >= p->col + p->cols)
+            continue;
+        if (p->z < KITTY_Z_DEFAULT_BG_CUTOFF && !default_bg)
+            continue;
+
+        int top;
+        if (!kitty_placement_visible_top(term, p, &top))
+            continue;
+        if (row_no < top || row_no >= top + p->rows)
+            continue;
+
+        const int px =
+            term->margins.left + p->col * cell_w + p->X + p->cache_x;
+        const int py =
+            term->margins.top + top * cell_h + p->Y + p->cache_y;
+
+        int src_x = x - px;
+        int src_y = y - py;
+        int dst_x = x;
+        int dst_y = y;
+        int w = cell_w;
+        int h = cell_h;
+
+        if (src_x < 0) {
+            dst_x -= src_x;
+            w += src_x;
+            src_x = 0;
+        }
+        if (src_y < 0) {
+            dst_y -= src_y;
+            h += src_y;
+            src_y = 0;
+        }
+        if (src_x + w > p->cache_w)
+            w = p->cache_w - src_x;
+        if (src_y + h > p->cache_h)
+            h = p->cache_h - src_y;
+
+        if (w <= 0 || h <= 0)
+            continue;
+
+        pixman_image_composite32(
+            PIXMAN_OP_OVER, p->cache_pix, NULL, pix,
+            src_x, src_y, 0, 0, dst_x, dst_y, w, h);
+    }
 }
 
 bool

@@ -32,6 +32,12 @@ enum {
      * placement is then simply not drawn.
      */
     KITTY_PLACEMENT_CACHE_QUOTA = 128u * 1024 * 1024,
+
+    /*
+     * A placement with z below this value is only drawn in cells with
+     * the default background color (spec: Z-index layers).
+     */
+    KITTY_Z_DEFAULT_BG_CUTOFF = -(1 << 30),
 };
 
 struct kitty_placement {
@@ -76,6 +82,15 @@ struct kitty_placement_store {
 
     /* Sum of kitty_placement.cache_bytes for this screen. */
     size_t cache_bytes;
+
+    /*
+     * Per-frame scratch list of visible z < 0 placements, in draw
+     * order. Rebuilt by kitty_render_prepass() on the main thread
+     * before the render workers start; read-only while they run.
+     */
+    struct kitty_placement **underlay;
+    size_t underlay_count;
+    size_t underlay_size;
 };
 
 struct kitty_placement_store *kitty_placement_store_for(struct terminal *term);
@@ -104,6 +119,22 @@ void kitty_placement_cell_span(
 const char *kitty_placement_put(
     struct terminal *term, const struct kitty_command *cmd,
     struct kitty_image *image);
+
+/*
+ * Delete placements as the command's `d` selector selects. Uppercase
+ * selectors also free the image data when no placement of the image is
+ * left (spec: Deletion). Sends no reply.
+ */
+void kitty_placement_delete(
+    struct terminal *term, const struct kitty_command *cmd);
+
+/*
+ * Screen row of the placement's first row. Returns false when no part
+ * of the placement is inside the viewport. The result may be negative
+ * when the placement starts above the viewport.
+ */
+bool kitty_placement_visible_top(
+    struct terminal *term, const struct kitty_placement *p, int *out_top);
 
 /* Drop one placement's scaled cache and update the store's budget. */
 void kitty_placement_cache_free(

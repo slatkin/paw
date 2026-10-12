@@ -112,6 +112,25 @@ kitty_image_store_alloc_id(struct kitty_image_store *store)
     }
 }
 
+bool
+kitty_image_store_delete_id(struct kitty_image_store *store, uint32_t id)
+{
+    tll_foreach(store->images, it) {
+        if (it->item.id != id)
+            continue;
+
+        if (store->on_remove != NULL)
+            store->on_remove(store->on_remove_user, it->item.id);
+
+        store->bytes -= it->item.size;
+        kitty_image_destroy(&it->item);
+        tll_remove(store->images, it);
+        return true;
+    }
+
+    return false;
+}
+
 /*
  * Delete the oldest image that does ('with_placements') or does not
  * ('!with_placements') have placements. Returns false when the list
