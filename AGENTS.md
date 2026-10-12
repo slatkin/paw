@@ -6,7 +6,7 @@ This file provides guidance to AI coding agents when working with code in this r
 
 - The repository is a fork of foot, a terminal emulator for Wayland. The code uses C11 and the meson build system.
 - Git remotes: `origin` is the fork (github.com/slatkin/paw). `upstream` is foot (codeberg.org/dnkl/foot).
-- Master builds `paw` and `pawclient`. Commit `d390d73f` renamed the binaries. Later commits moved the config path, server socket, and XTVERSION reply to paw names. The rebrand change is archived in `openspec/changes/archive/2026-10-12-rebrand-paw/`. Run `git log` and `git status` before you assume a name.
+- Master builds `paw` and `pawclient`. Commit `d390d73f` renamed the binaries. Later commits moved the config path, server socket, app-ids, and XTVERSION reply to paw names, and renamed the installed files (desktop files, systemd units, completions, icon, man pages). `TERM` stays `foot`. These user-visible `foot` strings remain on purpose, and they are not bugs: `slave.c:161`, `config.c:2892`, `main.c:691`, the completion description text, and the bash completion function names `_foot` and `_footclient`. The rebrand change is archived in `openspec/changes/archive/2026-10-12-rebrand-paw/`. Run `git log` and `git status` before you assume a name.
 - Master has fork commits on top of `upstream/master`, for example `d390d73f`.
 
 ## Build and test
@@ -95,7 +95,7 @@ These rules come from `openspec/changes/archive/2026-10-12-rebrand-paw/design.md
 - Keep edits to upstream files small. Each upstream merge can conflict with fork edits. Prefer files that upstream rarely changes.
 - Keep internal names. The rebrand does not rename `LOG_MODULE` strings, `FOOT_*` macros, or source file names.
 - Do not refactor upstream code only to remove duplicates.
-- After an upstream merge, search new user-visible strings: `git diff upstream/master -- '*.c' | grep -n '"foot'`.
+- After an upstream merge, search for new user-visible `"foot` strings. Follow the "Merging upstream foot" section in `README.md`. Its check, `git diff upstream/master -- '*.c' | grep -n '^+.*"foot'`, prints nothing on a clean tree.
 
 ## OpenSpec
 
