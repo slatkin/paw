@@ -10,9 +10,9 @@ Test convention: foot runs `UNITTEST { ... }` blocks as constructors in debug bu
 
 ## 2. APC parsing and replies
 
-- [ ] 2.1 In `vt.c`, add `STATE_APC_STRING` for `ESC _` and C1 `0x9f`, which calls `kitty_apc_start/put/end` (design D2). SOS and PM keep the old ignored state. Verify: live check `printf '\e_hello\e\\ok\n'` prints `ok`. Unit check: a vt-level test feeds `ESC _ G ... ESC \` and sees `kitty_apc_end` called with the right bytes.
-- [ ] 2.2 Implement the control-data parser and the reply writer in `kitty-graphics.c` (spec kitty-graphics-transmission: recognition, replies, `q` modes, `i`+`I` EINVAL, unknown keys ignored, length limits). Verify: unit checks for parsing `a=T,f=100,i=5,q=1`, a bad number, an unknown key, and 1 KiB overflow.
-- [ ] 2.3 Implement `a=q` for direct `f=24`/`f=32` data. Verify: `scripts/kitty-gfx-check.py 'a=q,i=31,s=1,v=1,f=24;AAAA'` prints `_Gi=31;OK` before the DA1 reply.
+- [x] 2.1 In `vt.c`, add `STATE_APC_STRING` for `ESC _` and C1 `0x9f`, which calls `kitty_apc_start/put/end` (design D2). SOS and PM keep the old ignored state. Verify: live check `printf '\e_hello\e\\ok\n'` prints `ok`. Unit check: a vt-level test feeds `ESC _ G ... ESC \` and sees `kitty_apc_end` called with the right bytes.
+- [x] 2.2 Implement the control-data parser and the reply writer in `kitty-graphics.c` (spec kitty-graphics-transmission: recognition, replies, `q` modes, `i`+`I` EINVAL, unknown keys ignored, length limits). Verify: unit checks for parsing `a=T,f=100,i=5,q=1`, a bad number, an unknown key, and 1 KiB overflow.
+- [x] 2.3 Implement `a=q` for direct `f=24`/`f=32` data. Verify: `scripts/kitty-gfx-check.py 'a=q,i=31,s=1,v=1,f=24;AAAA'` prints `_Gi=31;OK` before the DA1 reply.
 
 ## 3. Image store and decoding
 
