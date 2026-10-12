@@ -868,7 +868,11 @@ render_cell(struct terminal *term, pixman_image_t *pix,
     char32_t base = cell->wc;
     int cell_cols = 1;
 
-    if (base != 0) {
+    /* Kitty graphics: a U+10EEEE placeholder cell draws an image
+     * slice instead of a glyph (design D6, D8). */
+    const bool kitty_placeholder = kitty_cell_is_placeholder(term, cell);
+
+    if (base != 0 && !kitty_placeholder) {
         if (unlikely(
                 /* Classic box drawings */
                 (base >= GLYPH_BOX_DRAWING_FIRST &&
@@ -1037,6 +1041,11 @@ render_cell(struct terminal *term, pixman_image_t *pix,
     /* Kitty graphics: z < 0 placements are under the glyphs, over the
      * background (design D6). */
     kitty_render_underlay(term, pix, row, row_no, col, x, y);
+
+    /* Kitty graphics: the placeholder image slice is drawn over the
+     * background, like an underlay (design D6, D8). */
+    if (kitty_placeholder)
+        kitty_render_placeholder(term, pix, row, row_no, col, x, y);
 
     if (cell->attrs.blink && term->blink.fd < 0) {
         /* TODO: use a custom lock for this? */
