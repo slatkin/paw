@@ -45,9 +45,24 @@ char *
 base64_decode(const char *s, size_t *size)
 {
     const size_t len = strlen(s);
+
+    /*
+     * Clients (for example kitten) may omit the '=' padding. Pad a
+     * copy and decode that, so both forms are accepted.
+     */
     if (unlikely(len % 4 != 0)) {
-        errno = EINVAL;
-        return NULL;
+        const size_t padded_len = (len + 3) / 4 * 4;
+        char *padded = malloc(padded_len + 1);
+        if (unlikely(padded == NULL))
+            return NULL;
+
+        memcpy(padded, s, len);
+        memset(padded + len, '=', padded_len - len);
+        padded[padded_len] = '\0';
+
+        char *ret = base64_decode(padded, size);
+        free(padded);
+        return ret;
     }
 
     char *ret = malloc(len / 4 * 3 + 1);
@@ -169,4 +184,22 @@ base64_encode_final(const uint8_t *data, size_t size, char result[4])
     result[3] = c3;
 
     LOG_DBG("base64: encode: %c%c%c%c", c0, c1, c2, c3);
+}
+
+UNITTEST
+{
+    size_t size = 0;
+
+    char *decoded = base64_decode("TWFu", &size);
+    xassert(decoded != NULL && size == 3 && memcmp(decoded, "Man", 3) == 0);
+    free(decoded);
+
+    /* Unpadded input: kitten omits the '=' padding. */
+    decoded = base64_decode("TWE", &size);
+    xassert(decoded != NULL && size == 2 && memcmp(decoded, "Ma", 2) == 0);
+    free(decoded);
+
+    decoded = base64_decode("TQ", &size);
+    xassert(decoded != NULL && size == 1 && decoded[0] == 'M');
+    free(decoded);
 }
