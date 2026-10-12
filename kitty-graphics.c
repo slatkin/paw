@@ -34,6 +34,19 @@ struct kitty_graphics {
         bool overflow; /* command exceeded KITTY_APC_MAX; drop it */
     } apc;
 
+    /*
+     * Chunked direct transmission (design D2). The first chunk
+     * carries the full control data; the payloads are joined and
+     * decoded when the final chunk arrives.
+     */
+    struct {
+        bool active;
+        struct kitty_command cmd;
+        char *data;
+        size_t len;
+        size_t size;
+    } chunk;
+
     /* One image store per screen buffer (design D3). */
     struct kitty_image_store screens[2];
 };
@@ -80,8 +93,50 @@ kitty_fini(struct terminal *term)
     kitty_image_store_fini(&term->kitty->screens[0]);
     kitty_image_store_fini(&term->kitty->screens[1]);
     free(term->kitty->apc.data);
+    free(term->kitty->chunk.data);
     free(term->kitty);
     term->kitty = NULL;
+}
+
+static void
+kitty_chunk_reset(struct kitty_graphics *kitty)
+{
+    kitty->chunk.active = false;
+    kitty->chunk.len = 0;
+}
+
+/*
+ * Append payload bytes to the in-progress chunked transfer. Returns
+ * false, and cancels the transfer, if the accumulated base64 payload
+ * would exceed the APC limit.
+ */
+static bool
+kitty_chunk_append(struct kitty_graphics *kitty, const char *data, size_t len)
+{
+    /* Reserve room for the NUL terminator that base64_decode needs. */
+    if (len > KITTY_APC_MAX - 1 - kitty->chunk.len)
+        return false;
+
+    const size_t needed = kitty->chunk.len + len + 1;
+    if (needed > kitty->chunk.size) {
+        size_t new_size = kitty->chunk.size == 0 ? 1024 : kitty->chunk.size;
+        while (new_size < needed) {
+            if (new_size > (KITTY_APC_MAX - 1) / 2) {
+                new_size = KITTY_APC_MAX - 1;
+                break;
+            }
+            new_size *= 2;
+        }
+        if (new_size < needed)
+            new_size = needed;
+        kitty->chunk.data = xrealloc(kitty->chunk.data, new_size);
+        kitty->chunk.size = new_size;
+    }
+
+    memcpy(kitty->chunk.data + kitty->chunk.len, data, len);
+    kitty->chunk.len += len;
+    kitty->chunk.data[kitty->chunk.len] = '\0';
+    return true;
 }
 
 static bool
@@ -437,6 +492,8 @@ static void
 kitty_handle_transmit(struct terminal *term, const struct kitty_command *cmd,
                       const char *payload, size_t payload_len)
 {
+    struct kitty_graphics *kitty = term->kitty;
+
     if (cmd->medium != KITTY_MEDIUM_DIRECT) {
         kitty_reply(
             term, cmd, cmd->has_id ? cmd->id : 0, false,
@@ -446,6 +503,66 @@ kitty_handle_transmit(struct terminal *term, const struct kitty_command *cmd,
 
     struct kitty_image_store *store = kitty_image_store_for(term);
 
+    /*
+     * Chunked transfer. A transmit command that arrives while a
+     * transfer is in progress is a continuation of it; its control
+     * data (apart from m) is ignored.
+     */
+    if (kitty->chunk.active) {
+        if (!kitty_chunk_append(kitty, payload, payload_len)) {
+            kitty_chunk_reset(kitty);
+            kitty_reply(term, cmd, cmd->has_id ? cmd->id : 0, false,
+                        "EINVAL:image too large");
+            return;
+        }
+
+        /* m=0, or no m key, ends the transfer. */
+        if (cmd->has_more && cmd->more != 0)
+            return;
+
+        const struct kitty_command first = kitty->chunk.cmd;
+        const uint32_t id = first.has_id
+            ? first.id
+            : kitty_image_store_alloc_id(store);
+
+        struct kitty_image image;
+        const char *error = NULL;
+        const bool ok = kitty_image_decode(
+            &first, kitty->chunk.data, kitty->chunk.len, store->quota,
+            &image, &error);
+
+        kitty_chunk_reset(kitty);
+
+        if (!ok) {
+            kitty_reply(term, &first, id, false, error);
+            return;
+        }
+
+        image.id = id;
+        image.has_number = first.has_number;
+        image.number = first.number;
+        if (!kitty_image_store_add(store, &image)) {
+            kitty_image_destroy(&image);
+            kitty_reply(term, &first, id, false, "EINVAL:image too large");
+            return;
+        }
+
+        kitty_reply(term, &first, id, true, "OK");
+        return;
+    }
+
+    /* m=1 starts a transfer. Save the control data for the reply. */
+    if (cmd->has_more && cmd->more != 0) {
+        kitty->chunk.active = true;
+        kitty->chunk.cmd = *cmd;
+        if (!kitty_chunk_append(kitty, payload, payload_len)) {
+            kitty_chunk_reset(kitty);
+            kitty_reply(term, cmd, cmd->has_id ? cmd->id : 0, false,
+                        "EINVAL:image too large");
+        }
+        return;
+    }
+
     const uint32_t id = cmd->has_id
         ? cmd->id
         : kitty_image_store_alloc_id(store);
@@ -453,7 +570,7 @@ kitty_handle_transmit(struct terminal *term, const struct kitty_command *cmd,
     struct kitty_image image;
     const char *error = NULL;
     if (!kitty_image_decode(
-            cmd, payload, payload_len, KITTY_IMAGE_QUOTA, &image, &error))
+            cmd, payload, payload_len, store->quota, &image, &error))
     {
         kitty_reply(term, cmd, id, false, error);
         return;
@@ -462,7 +579,11 @@ kitty_handle_transmit(struct terminal *term, const struct kitty_command *cmd,
     image.id = id;
     image.has_number = cmd->has_number;
     image.number = cmd->number;
-    kitty_image_store_add(store, &image);
+    if (!kitty_image_store_add(store, &image)) {
+        kitty_image_destroy(&image);
+        kitty_reply(term, cmd, id, false, "EINVAL:image too large");
+        return;
+    }
 
     kitty_reply(term, cmd, id, true, "OK");
 }
@@ -491,7 +612,7 @@ kitty_handle_query(struct terminal *term, const struct kitty_command *cmd,
     struct kitty_image image;
     const char *error = NULL;
     const bool ok = kitty_image_decode(
-        cmd, payload, payload_len, KITTY_IMAGE_QUOTA, &image, &error);
+        cmd, payload, payload_len, store->quota, &image, &error);
     if (ok)
         kitty_image_destroy(&image);
 
@@ -501,12 +622,15 @@ kitty_handle_query(struct terminal *term, const struct kitty_command *cmd,
 static void
 kitty_handle_apc(struct terminal *term, const char *data, size_t len)
 {
+    struct kitty_graphics *kitty = term->kitty;
     struct kitty_command cmd;
     kitty_command_init(&cmd);
 
     const char *payload;
     size_t payload_len;
     if (!kitty_parse_apc(data, len, &cmd, &payload, &payload_len)) {
+        /* A malformed command aborts any in-progress transfer. */
+        kitty_chunk_reset(kitty);
         kitty_reply(
             term, &cmd, cmd.has_id ? cmd.id : 0, false,
             "EINVAL:invalid control data");
@@ -514,8 +638,36 @@ kitty_handle_apc(struct terminal *term, const char *data, size_t len)
     }
 
     if (cmd.has_id && cmd.has_number) {
+        /* A malformed command aborts any in-progress transfer. */
+        kitty_chunk_reset(kitty);
         kitty_reply(
             term, &cmd, cmd.id, false, "EINVAL:both i and I given");
+        return;
+    }
+
+    /*
+     * A delete command cancels an in-progress chunked transfer
+     * (spec kitty-graphics-transmission: Chunked direct transfer).
+     */
+    if (kitty->chunk.active && cmd.action == KITTY_ACTION_DELETE) {
+        kitty_chunk_reset(kitty);
+        kitty_reply(term, &cmd, cmd.has_id ? cmd.id : 0, true, "OK");
+        return;
+    }
+
+    if (cmd.action != KITTY_ACTION_TRANSMIT &&
+        cmd.action != KITTY_ACTION_TRANSMIT_AND_DISPLAY)
+    {
+        /* Any other command aborts an in-progress transfer. */
+        kitty_chunk_reset(kitty);
+    }
+
+    /* Relative placements are not supported. */
+    if (cmd.has_parent_id || cmd.has_parent_placement) {
+        kitty_chunk_reset(kitty);
+        kitty_reply(
+            term, &cmd, cmd.has_id ? cmd.id : 0, false,
+            "EINVAL:relative placement not supported");
         return;
     }
 
@@ -529,8 +681,17 @@ kitty_handle_apc(struct terminal *term, const char *data, size_t len)
         kitty_handle_query(term, &cmd, payload, payload_len);
         return;
 
+    case KITTY_ACTION_FRAME:
+    case KITTY_ACTION_ANIMATE:
+    case KITTY_ACTION_COMPOSE:
+        /* Animation is not supported (spec: Unsupported actions). */
+        kitty_reply(
+            term, &cmd, cmd.has_id ? cmd.id : 0, false,
+            "EINVAL:unsupported action");
+        return;
+
     default:
-        /* Put, delete and animation actions are added later. */
+        /* Put and delete are added later. */
         kitty_reply(
             term, &cmd, cmd.has_id ? cmd.id : 0, false,
             "EINVAL:unsupported action");
@@ -767,4 +928,79 @@ UNITTEST
     const size_t n = kitty_format_reply(buf, sizeof(buf), &cmd, 31, "OK");
     xassert(n == sizeof(expected) - 1);
     xassert(memcmp(buf, expected, n) == 0);
+}
+
+UNITTEST
+{
+    /* Chunked direct transfer: three chunks build one image. */
+    struct terminal term = {0};
+    term.ptmx = -1;
+    kitty_init(&term);
+
+    static const char chunk1[] =
+        "\x1b_Ga=t,i=1,f=24,s=2,v=2,m=1;AAAA\x1b\\";
+    static const char chunk2[] = "\x1b_Gm=1;AAAA\x1b\\";
+    static const char chunk3[] = "\x1b_Gm=0;AAAAAAAA\x1b\\";
+
+    vt_from_slave(&term, (const uint8_t *)chunk1, sizeof(chunk1) - 1);
+    xassert(term.kitty->chunk.active);
+    vt_from_slave(&term, (const uint8_t *)chunk2, sizeof(chunk2) - 1);
+    xassert(term.kitty->chunk.active);
+    vt_from_slave(&term, (const uint8_t *)chunk3, sizeof(chunk3) - 1);
+    xassert(!term.kitty->chunk.active);
+
+    struct kitty_image *img =
+        kitty_image_store_find_id(&term.kitty->screens[0], 1);
+    xassert(img != NULL);
+    xassert(img->width == 2 && img->height == 2);
+    xassert(img->data[0] == 0xff000000u);
+
+    kitty_fini(&term);
+}
+
+UNITTEST
+{
+    /* A delete command cancels an in-progress chunked transfer. */
+    struct terminal term = {0};
+    term.ptmx = -1;
+    kitty_init(&term);
+
+    static const char start[] =
+        "\x1b_Ga=t,i=7,f=24,s=2,v=2,m=1;AAAA\x1b\\";
+    static const char cancel[] = "\x1b_Ga=d\x1b\\";
+
+    vt_from_slave(&term, (const uint8_t *)start, sizeof(start) - 1);
+    xassert(term.kitty->chunk.active);
+    vt_from_slave(&term, (const uint8_t *)cancel, sizeof(cancel) - 1);
+    xassert(!term.kitty->chunk.active);
+
+    /* The partial data is discarded. */
+    xassert(tll_length(term.kitty->screens[0].images) == 0);
+
+    /* The next complete transfer starts from a fresh state. */
+    static const char done[] =
+        "\x1b_Ga=t,i=8,f=24,s=1,v=1;AAAA\x1b\\";
+    vt_from_slave(&term, (const uint8_t *)done, sizeof(done) - 1);
+    xassert(kitty_image_store_find_id(&term.kitty->screens[0], 8) != NULL);
+
+    kitty_fini(&term);
+}
+
+UNITTEST
+{
+    /* Animation actions and relative placements change no state. */
+    struct terminal term = {0};
+    term.ptmx = -1;
+    kitty_init(&term);
+
+    static const char frame[] = "\x1b_Ga=f,i=1;AAAA\x1b\\";
+    static const char relative[] =
+        "\x1b_Ga=t,i=2,f=24,s=1,v=1,P=1;AAAA\x1b\\";
+
+    vt_from_slave(&term, (const uint8_t *)frame, sizeof(frame) - 1);
+    vt_from_slave(&term, (const uint8_t *)relative, sizeof(relative) - 1);
+
+    xassert(tll_length(term.kitty->screens[0].images) == 0);
+
+    kitty_fini(&term);
 }

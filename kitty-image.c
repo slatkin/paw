@@ -56,6 +56,7 @@ kitty_image_store_init(struct kitty_image_store *store)
     memset(store, 0, sizeof(*store));
     store->next_id = 1;
     store->next_serial = 1;
+    store->quota = KITTY_IMAGE_QUOTA;
 }
 
 void
@@ -111,10 +112,37 @@ kitty_image_store_alloc_id(struct kitty_image_store *store)
     }
 }
 
-void
+/*
+ * Delete the oldest image that does ('with_placements') or does not
+ * ('!with_placements') have placements. Returns false when the list
+ * holds no such image.
+ */
+static bool
+store_remove_oldest(
+    struct kitty_image_store *store, bool with_placements)
+{
+    tll_foreach(store->images, it) {
+        if ((it->item.placements > 0) != with_placements)
+            continue;
+
+        store->bytes -= it->item.size;
+        kitty_image_destroy(&it->item);
+        tll_remove(store->images, it);
+        return true;
+    }
+
+    return false;
+}
+
+bool
 kitty_image_store_add(
     struct kitty_image_store *store, const struct kitty_image *image)
 {
+    /* An image that does not fit on its own is never stored, and
+     * never evicts another image. */
+    if (image->size > store->quota)
+        return false;
+
     /* An image with the same id is replaced. */
     tll_foreach(store->images, it) {
         if (it->item.id != image->id)
@@ -126,11 +154,23 @@ kitty_image_store_add(
         break;
     }
 
+    /* Make room: images without placements first, oldest first, then
+     * the oldest images with placements (spec: Storage quota). The
+     * subtraction cannot underflow, because image->size <= quota. */
+    while (store->bytes > store->quota - image->size) {
+        if (!store_remove_oldest(store, false) &&
+            !store_remove_oldest(store, true))
+        {
+            break;
+        }
+    }
+
     struct kitty_image copy = *image;
     copy.serial = store->next_serial++;
 
     tll_push_back(store->images, copy);
     store->bytes += copy.size;
+    return true;
 }
 
 /*
@@ -607,4 +647,104 @@ UNITTEST
                 KITTY_IMAGE_QUOTA, &img, &error));
     xassert(error != NULL);
     xassert(img.data == NULL);
+}
+
+UNITTEST
+{
+    /*
+     * Quota: with room for three 100-byte images, a fourth evicts the
+     * oldest image. The store is exercised with fabricated sizes so
+     * the test needs no large allocation.
+     */
+    struct kitty_image_store store;
+    kitty_image_store_init(&store);
+    store.quota = 300;
+
+    for (uint32_t i = 1; i <= 4; i++) {
+        struct kitty_image img = {0};
+        img.id = i;
+        img.size = 100;
+        xassert(kitty_image_store_add(&store, &img));
+    }
+
+    xassert(store.bytes == 300);
+    xassert(kitty_image_store_find_id(&store, 1) == NULL);
+    xassert(kitty_image_store_find_id(&store, 2) != NULL);
+    xassert(kitty_image_store_find_id(&store, 3) != NULL);
+    xassert(kitty_image_store_find_id(&store, 4) != NULL);
+
+    kitty_image_store_fini(&store);
+}
+
+UNITTEST
+{
+    /*
+     * Eviction order: an image without placements is deleted before an
+     * older image that has one (spec: Storage quota).
+     */
+    struct kitty_image_store store;
+    kitty_image_store_init(&store);
+    store.quota = 200;
+
+    struct kitty_image a = {0};
+    a.id = 1;
+    a.size = 100;
+    a.placements = 1;
+    xassert(kitty_image_store_add(&store, &a));
+
+    struct kitty_image b = {0};
+    b.id = 2;
+    b.size = 100;
+    xassert(kitty_image_store_add(&store, &b));
+
+    struct kitty_image c = {0};
+    c.id = 3;
+    c.size = 100;
+    xassert(kitty_image_store_add(&store, &c));
+
+    xassert(store.bytes == 200);
+    xassert(kitty_image_store_find_id(&store, 1) != NULL);
+    xassert(kitty_image_store_find_id(&store, 2) == NULL);
+    xassert(kitty_image_store_find_id(&store, 3) != NULL);
+
+    kitty_image_store_fini(&store);
+}
+
+UNITTEST
+{
+    /* An image larger than the quota fails and evicts nothing. */
+    struct kitty_image_store store;
+    kitty_image_store_init(&store);
+    store.quota = 200;
+
+    struct kitty_image a = {0};
+    a.id = 1;
+    a.size = 100;
+    xassert(kitty_image_store_add(&store, &a));
+
+    struct kitty_image big = {0};
+    big.id = 2;
+    big.size = 201;
+    xassert(!kitty_image_store_add(&store, &big));
+
+    xassert(store.bytes == 100);
+    xassert(kitty_image_store_find_id(&store, 1) != NULL);
+    xassert(kitty_image_store_find_id(&store, 2) == NULL);
+
+    /* The decode path rejects an over-quota image before allocating. */
+    struct kitty_image img;
+    struct kitty_command cmd;
+    kitty_command_init(&cmd);
+    cmd.format = KITTY_FORMAT_RGBA;
+    cmd.has_width = cmd.has_height = true;
+    cmd.width = 4;
+    cmd.height = 4;
+
+    const char *error = NULL;
+    xassert(!kitty_image_decode(&cmd, "AAAA", 4, 32, &img, &error));
+    xassert(error != NULL);
+    xassert(strcmp(error, "EINVAL:image too large") == 0);
+    xassert(img.data == NULL);
+
+    kitty_image_store_fini(&store);
 }

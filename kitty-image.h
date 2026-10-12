@@ -27,6 +27,10 @@ struct kitty_image {
     uint32_t *data;       /* Premultiplied a8r8g8b8 */
     size_t size;          /* Bytes */
     pixman_image_t *pix;
+
+    /* Number of placements that refer to this image. Eviction
+     * deletes an image without placements first (design D3). */
+    unsigned int placements;
 };
 
 struct kitty_image_store {
@@ -36,6 +40,14 @@ struct kitty_image_store {
     uint32_t next_id;
     uint64_t next_serial;
     size_t bytes; /* Sum of image->size */
+
+    /*
+     * Per-screen budget.
+     *
+     * Defaults to KITTY_IMAGE_QUOTA. Unit tests lower it to exercise
+     * the eviction order without large allocations.
+     */
+    size_t quota;
 };
 
 void kitty_image_store_init(struct kitty_image_store *store);
@@ -52,8 +64,15 @@ uint32_t kitty_image_store_alloc_id(struct kitty_image_store *store);
 /*
  * Insert a decoded image. Takes ownership of image->data and
  * image->pix. An image with the same id is replaced.
+ *
+ * Deletes old images, oldest first, until the new image fits in the
+ * store's quota. Images without placements are deleted before images
+ * with placements.
+ *
+ * Returns false, and changes nothing, if the image itself is larger
+ * than the quota.
  */
-void kitty_image_store_add(
+bool kitty_image_store_add(
     struct kitty_image_store *store, const struct kitty_image *image);
 
 /* Free the pixel buffer and the pixman image. */
