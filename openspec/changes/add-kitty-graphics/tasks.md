@@ -4,9 +4,9 @@ Test convention: foot runs `UNITTEST { ... }` blocks as constructors in debug bu
 
 ## 1. Skeleton and build
 
-- [ ] 1.1 Add `kitty-graphics.h` with the hook API from design D1, D5, and D6 as empty functions in `kitty-graphics.c`. Add `struct kitty_graphics *kitty` to `struct terminal`. Create and free it in `term_init` / `term_destroy` (`kitty_fini` next to `sixel_fini`). Verify: `ninja -C build-dbg` builds and `build-dbg/paw` opens a window.
-- [ ] 1.2 Add `dependency('libpng')`, `dependency('zlib')`, and the `kitty-*.c` sources to the `paw` executable in `meson.build` (design D10). Verify: `ldd build-dbg/paw | grep -E 'png|libz'` shows both.
-- [ ] 1.3 Add `scripts/kitty-gfx-check.py`. It writes one graphics command (given as an argument) to the tty, then `CSI c`, and prints every reply it reads before the DA1 reply. Verify: in stock foot it prints only the DA1 reply.
+- [x] 1.1 Add `kitty-graphics.h` with the hook API from design D1, D5, and D6 as empty functions in `kitty-graphics.c`. Add `struct kitty_graphics *kitty` to `struct terminal`. Create and free it in `term_init` / `term_destroy` (`kitty_fini` next to `sixel_fini`). Verify: `ninja -C build-dbg` builds and `build-dbg/paw` opens a window.
+- [x] 1.2 Add `dependency('libpng')`, `dependency('zlib')`, and the `kitty-*.c` sources to the `paw` executable in `meson.build` (design D10). Verify: `ldd build-dbg/paw | grep -E 'png|libz'` shows both.
+- [x] 1.3 Add `scripts/kitty-gfx-check.py`. It writes one graphics command (given as an argument) to the tty, then `CSI c`, and prints every reply it reads before the DA1 reply. Verify: in stock foot it prints only the DA1 reply.
 
 ## 2. APC parsing and replies
 
