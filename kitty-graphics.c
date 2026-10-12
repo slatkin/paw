@@ -6,6 +6,7 @@
 
 #include "kitty-image.h"
 #include "kitty-file.h"
+#include "kitty-placement.h"
 
 #define LOG_MODULE "kitty-graphics"
 #define LOG_ENABLE_DBG 0
@@ -48,21 +49,37 @@ struct kitty_graphics {
         size_t size;
     } chunk;
 
-    /* One image store per screen buffer (design D3). */
-    struct kitty_image_store screens[2];
+    /*
+     * One image and placement store per screen buffer (design D3,
+     * D5).
+     */
+    struct {
+        struct kitty_image_store image_store;
+        struct kitty_placement_store placement_store;
+    } screens[2];
 };
 
-static struct kitty_image_store *
-kitty_image_store_for(struct terminal *term)
+static int
+kitty_screen_idx(struct terminal *term)
 {
     /*
      * The main and alternate screens have separate stores. The grid
      * addresses are stable: the interactive-resize code replaces the
      * contents of term->normal, not its address.
      */
-    return term->grid == &term->alt
-        ? &term->kitty->screens[1]
-        : &term->kitty->screens[0];
+    return term->grid == &term->alt ? 1 : 0;
+}
+
+static struct kitty_image_store *
+kitty_image_store_for(struct terminal *term)
+{
+    return &term->kitty->screens[kitty_screen_idx(term)].image_store;
+}
+
+struct kitty_placement_store *
+kitty_placement_store_for(struct terminal *term)
+{
+    return &term->kitty->screens[kitty_screen_idx(term)].placement_store;
 }
 
 void
@@ -81,8 +98,17 @@ kitty_init(struct terminal *term)
     xassert(term->kitty == NULL);
     term->kitty = xcalloc(1, sizeof(struct kitty_graphics));
     term->kitty->term = term;
-    kitty_image_store_init(&term->kitty->screens[0]);
-    kitty_image_store_init(&term->kitty->screens[1]);
+
+    for (int i = 0; i < 2; i++) {
+        kitty_image_store_init(&term->kitty->screens[i].image_store);
+        kitty_placement_store_init(&term->kitty->screens[i].placement_store);
+
+        /* Keep placements in sync when an image is replaced or evicted. */
+        term->kitty->screens[i].image_store.on_remove =
+            kitty_placement_on_image_removed;
+        term->kitty->screens[i].image_store.on_remove_user =
+            &term->kitty->screens[i].placement_store;
+    }
 }
 
 void
@@ -91,8 +117,10 @@ kitty_fini(struct terminal *term)
     if (term->kitty == NULL)
         return;
 
-    kitty_image_store_fini(&term->kitty->screens[0]);
-    kitty_image_store_fini(&term->kitty->screens[1]);
+    for (int i = 0; i < 2; i++) {
+        kitty_placement_store_fini(&term->kitty->screens[i].placement_store);
+        kitty_image_store_fini(&term->kitty->screens[i].image_store);
+    }
     free(term->kitty->apc.data);
     free(term->kitty->chunk.data);
     free(term->kitty);
@@ -535,6 +563,18 @@ kitty_transmit(
         return;
     }
 
+    /* a=T transmits and places in one command. */
+    if (cmd->action == KITTY_ACTION_TRANSMIT_AND_DISPLAY) {
+        struct kitty_image *stored = kitty_image_store_find_id(store, id);
+        const char *error = stored != NULL
+            ? kitty_placement_put(term, cmd, stored)
+            : "ENOENT:no such image";
+        if (error != NULL) {
+            kitty_reply(term, cmd, id, false, error);
+            return;
+        }
+    }
+
     kitty_reply(term, cmd, id, true, "OK");
 }
 
@@ -588,6 +628,18 @@ kitty_handle_transmit(struct terminal *term, const struct kitty_command *cmd,
             kitty_image_destroy(&image);
             kitty_reply(term, &first, id, false, "EINVAL:image too large");
             return;
+        }
+
+        if (first.action == KITTY_ACTION_TRANSMIT_AND_DISPLAY) {
+            struct kitty_image *stored = kitty_image_store_find_id(
+                kitty_image_store_for(term), id);
+            const char *error = stored != NULL
+                ? kitty_placement_put(term, &first, stored)
+                : "ENOENT:no such image";
+            if (error != NULL) {
+                kitty_reply(term, &first, id, false, error);
+                return;
+            }
         }
 
         kitty_reply(term, &first, id, true, "OK");
@@ -658,6 +710,33 @@ kitty_handle_query(struct terminal *term, const struct kitty_command *cmd,
 }
 
 static void
+kitty_handle_put(struct terminal *term, const struct kitty_command *cmd)
+{
+    struct kitty_image_store *store = kitty_image_store_for(term);
+
+    struct kitty_image *image = NULL;
+    uint32_t id = 0;
+
+    if (cmd->has_id) {
+        id = cmd->id;
+        image = kitty_image_store_find_id(store, id);
+    } else if (cmd->has_number) {
+        image = kitty_image_store_find_number(store, cmd->number);
+        if (image != NULL)
+            id = image->id;
+    }
+
+    if (image == NULL) {
+        /* Without i and I there is no reply anyway. */
+        kitty_reply(term, cmd, id, false, "ENOENT:no such image");
+        return;
+    }
+
+    const char *error = kitty_placement_put(term, cmd, image);
+    kitty_reply(term, cmd, id, error == NULL, error == NULL ? "OK" : error);
+}
+
+static void
 kitty_handle_apc(struct terminal *term, const char *data, size_t len)
 {
     struct kitty_graphics *kitty = term->kitty;
@@ -715,6 +794,10 @@ kitty_handle_apc(struct terminal *term, const char *data, size_t len)
         kitty_handle_query(term, &cmd, payload, payload_len);
         return;
 
+    case KITTY_ACTION_PUT:
+        kitty_handle_put(term, &cmd);
+        return;
+
     case KITTY_ACTION_FRAME:
     case KITTY_ACTION_ANIMATE:
     case KITTY_ACTION_COMPOSE:
@@ -725,7 +808,7 @@ kitty_handle_apc(struct terminal *term, const char *data, size_t len)
         return;
 
     default:
-        /* Put and delete are added later. */
+        /* Delete selectors are added by a later task. */
         kitty_reply(
             term, &cmd, cmd.has_id ? cmd.id : 0, false,
             "EINVAL:unsupported action");
@@ -834,27 +917,7 @@ kitty_reflow_end(struct terminal *term)
 {
 }
 
-void
-kitty_render_overlay(
-    struct terminal *term, pixman_image_t *pix,
-    pixman_region32_t *damage, const struct coord *cursor)
-{
-}
-
-void
-kitty_render_underlay(
-    struct terminal *term, pixman_image_t *pix,
-    const struct row *row, int row_no, int col, int x, int y)
-{
-}
-
-bool
-kitty_render_placeholder(
-    struct terminal *term, pixman_image_t *pix,
-    const struct row *row, int row_no, int col, int x, int y)
-{
-    return false;
-}
+/* The render hooks (A, B, C) live in kitty-render.c. */
 
 UNITTEST
 {
@@ -984,7 +1047,7 @@ UNITTEST
     xassert(!term.kitty->chunk.active);
 
     struct kitty_image *img =
-        kitty_image_store_find_id(&term.kitty->screens[0], 1);
+        kitty_image_store_find_id(&term.kitty->screens[0].image_store, 1);
     xassert(img != NULL);
     xassert(img->width == 2 && img->height == 2);
     xassert(img->data[0] == 0xff000000u);
@@ -1009,13 +1072,13 @@ UNITTEST
     xassert(!term.kitty->chunk.active);
 
     /* The partial data is discarded. */
-    xassert(tll_length(term.kitty->screens[0].images) == 0);
+    xassert(tll_length(term.kitty->screens[0].image_store.images) == 0);
 
     /* The next complete transfer starts from a fresh state. */
     static const char done[] =
         "\x1b_Ga=t,i=8,f=24,s=1,v=1;AAAA\x1b\\";
     vt_from_slave(&term, (const uint8_t *)done, sizeof(done) - 1);
-    xassert(kitty_image_store_find_id(&term.kitty->screens[0], 8) != NULL);
+    xassert(kitty_image_store_find_id(&term.kitty->screens[0].image_store, 8) != NULL);
 
     kitty_fini(&term);
 }
@@ -1034,7 +1097,7 @@ UNITTEST
     vt_from_slave(&term, (const uint8_t *)frame, sizeof(frame) - 1);
     vt_from_slave(&term, (const uint8_t *)relative, sizeof(relative) - 1);
 
-    xassert(tll_length(term.kitty->screens[0].images) == 0);
+    xassert(tll_length(term.kitty->screens[0].image_store.images) == 0);
 
     kitty_fini(&term);
 }
@@ -1063,7 +1126,7 @@ UNITTEST
     xassert(!term.kitty->chunk.active);
 
     struct kitty_image *img =
-        kitty_image_store_find_id(&term.kitty->screens[0], 1);
+        kitty_image_store_find_id(&term.kitty->screens[0].image_store, 1);
     xassert(img != NULL);
     xassert(img->width == 2 && img->height == 2);
     xassert(img->data[0] == 0xff000000u);
@@ -1109,7 +1172,7 @@ UNITTEST
     xassert(!term.kitty->chunk.active);
 
     struct kitty_image *img =
-        kitty_image_store_find_id(&term.kitty->screens[0], 2);
+        kitty_image_store_find_id(&term.kitty->screens[0].image_store, 2);
     xassert(img != NULL);
     xassert(img->width == 2 && img->height == 2);
 

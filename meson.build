@@ -295,6 +295,8 @@ pgolib = static_library(
   'kitty-graphics.c', 'kitty-graphics.h',
   'kitty-file.c', 'kitty-file.h',
   'kitty-image.c', 'kitty-image.h',
+  'kitty-placement.c', 'kitty-placement.h',
+  'kitty-render.c',
   'selection.c', 'selection.h',
   'terminal.c', 'terminal.h',
   emoji_variation_sequences,

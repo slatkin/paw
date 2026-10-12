@@ -125,6 +125,9 @@ store_remove_oldest(
         if ((it->item.placements > 0) != with_placements)
             continue;
 
+        if (store->on_remove != NULL)
+            store->on_remove(store->on_remove_user, it->item.id);
+
         store->bytes -= it->item.size;
         kitty_image_destroy(&it->item);
         tll_remove(store->images, it);
@@ -147,6 +150,10 @@ kitty_image_store_add(
     tll_foreach(store->images, it) {
         if (it->item.id != image->id)
             continue;
+
+        /* Placements of the replaced image must not outlive it. */
+        if (store->on_remove != NULL)
+            store->on_remove(store->on_remove_user, it->item.id);
 
         store->bytes -= it->item.size;
         kitty_image_destroy(&it->item);

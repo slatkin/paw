@@ -33,6 +33,9 @@ struct kitty_image {
     unsigned int placements;
 };
 
+/* Called when an image is removed from a store (replaced or evicted). */
+typedef void (*kitty_image_removed_cb)(void *user, uint32_t image_id);
+
 struct kitty_image_store {
     /* Ordered by age: oldest first. */
     tll(struct kitty_image) images;
@@ -48,6 +51,15 @@ struct kitty_image_store {
      * the eviction order without large allocations.
      */
     size_t quota;
+
+    /*
+     * Placement cleanup. The image store does not know about
+     * placements, so it calls back into the owner (kitty-graphics.c)
+     * whenever an image is removed. Without this, placements would
+     * keep a dangling 'image' pointer.
+     */
+    kitty_image_removed_cb on_remove;
+    void *on_remove_user;
 };
 
 void kitty_image_store_init(struct kitty_image_store *store);

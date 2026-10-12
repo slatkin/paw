@@ -110,6 +110,12 @@ void kitty_cell_size_changed(struct terminal *term);
 void kitty_reflow_begin(struct terminal *term);
 void kitty_reflow_end(struct terminal *term);
 
+/*
+ * Build the scaled-image cache for every placement visible in the next
+ * frame. Called on the main thread, before the render workers start.
+ */
+void kitty_render_prepass(struct terminal *term);
+
 void kitty_render_overlay(
     struct terminal *term, pixman_image_t *pix,
     pixman_region32_t *damage, const struct coord *cursor);

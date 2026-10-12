@@ -36,6 +36,7 @@
 #include "grid.h"
 #include "ime.h"
 #include "input.h"
+#include "kitty-graphics.h"
 #include "quirks.h"
 #include "search.h"
 #include "selection.h"
@@ -3553,6 +3554,9 @@ grid_render(struct terminal *term)
 
     render_sixel_images(term, buf->pix[0], &damage, &cursor);
 
+    /* Kitty graphics: build the scaled-image cache before the workers
+     * start (design D6). */
+    kitty_render_prepass(term);
 
     if (term->render.workers.count > 0) {
         mtx_lock(&term->render.workers.lock);
@@ -3591,6 +3595,10 @@ grid_render(struct terminal *term)
             sem_wait(&term->render.workers.done);
         term->render.workers.buf = NULL;
     }
+
+    /* Kitty graphics: overlay z >= 0 placements on top of the text
+     * (design D6). */
+    kitty_render_overlay(term, buf->pix[0], &damage, &cursor);
 
     for (size_t i = 0; i < term->render.workers.count; i++)
         pixman_region32_union(&damage, &damage, &buf->dirty[i + 1]);
