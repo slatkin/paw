@@ -362,6 +362,7 @@ executable(
 
 install_data(
   'foot.desktop', 'foot-server.desktop', 'footclient.desktop',
+  rename: ['paw.desktop', 'paw-server.desktop', 'pawclient.desktop'],
   install_dir: join_paths(get_option('datadir'), 'applications'))
 
 systemd = dependency('systemd', required: false)
@@ -380,26 +381,27 @@ if systemd.found() or custom_systemd_units_dir != ''
   configure_file(
     configuration: configuration,
     input: 'foot-server.service.in',
-    output: '@BASENAME@',
+    output: 'paw-server.service',
     install_dir: systemd_units_dir
     )
 
   install_data(
     'foot-server.socket',
+    rename: 'paw-server.socket',
     install_dir: systemd_units_dir)
 endif
 
 scdoc = dependency('scdoc', native: true, required: get_option('docs'))
-install_data('foot.ini', install_dir: join_paths(get_option('sysconfdir'), 'xdg', 'foot'))
+install_data('foot.ini', rename: 'paw.ini', install_dir: join_paths(get_option('sysconfdir'), 'xdg', 'paw'))
 if scdoc.found()
   install_data(
     'LICENSE', 'README.md', 'CHANGELOG.md',
-    install_dir: join_paths(get_option('datadir'), 'doc', 'foot'))
+    install_dir: join_paths(get_option('datadir'), 'doc', 'paw'))
   subdir('doc')
 endif
 
 if get_option('themes')
-  install_subdir('themes', install_dir: join_paths(get_option('datadir'), 'foot'))
+  install_subdir('themes', install_dir: join_paths(get_option('datadir'), 'paw'))
 endif
 
 terminfo_base_name = get_option('terminfo-base-name')

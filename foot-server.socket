@@ -1,5 +1,5 @@
 [Socket]
-ListenStream=%t/foot.sock
+ListenStream=%t/paw.sock
 
 [Unit]
 PartOf=graphical-session.target

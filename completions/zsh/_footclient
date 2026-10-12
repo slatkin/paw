@@ -1,4 +1,4 @@
-#compdef footclient
+#compdef pawclient
 
 _arguments \
     -s -S -C \

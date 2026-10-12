@@ -1,4 +1,4 @@
-#compdef foot
+#compdef paw
 
 _arguments \
     -s -S -C \

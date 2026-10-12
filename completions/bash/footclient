@@ -31,7 +31,7 @@ _footclient()
     # Check if positional argument is completed
     previous_words=( "${COMP_WORDS[@]}" )
     unset previous_words[-1]
-    commands=$(compgen -c | grep -vFx "$(compgen -k)" | grep -vE '^([.:[]|footclient)$' | sort -u)
+    commands=$(compgen -c | grep -vFx "$(compgen -k)" | grep -vE '^([.:[]|pawclient)$' | sort -u)
     i=0
     for word in "${previous_words[@]}" ; do
         match=$(printf "$commands" | grep -Fx "$word" 2>/dev/null)
@@ -79,4 +79,4 @@ _footclient()
     return 0
 }
 
-complete -F _footclient footclient
+complete -F _footclient pawclient

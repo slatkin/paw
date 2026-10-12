@@ -1,11 +1,11 @@
 [Desktop Entry]
 Type=Application
-Exec=foot --server
-Icon=foot
+Exec=paw --server
+Icon=paw
 Terminal=false
 Categories=System;TerminalEmulator;
 Keywords=shell;prompt;command;commandline;
 
-Name=Foot Server
+Name=Paw Server
 GenericName=Terminal
 Comment=A wayland native terminal emulator (server)

@@ -23,13 +23,14 @@ conf_data = configuration_data(
   }
 )
 
-foreach man_src : [{'name': 'foot', 'section' : 1},
-                   {'name': 'foot.ini', 'section': 5},
-                   {'name': 'footclient', 'section': 1},
-                   {'name': 'foot-ctlseqs', 'section': 7}]
+foreach man_src : [{'name': 'foot', 'out_name': 'paw', 'section' : 1},
+                   {'name': 'foot.ini', 'out_name': 'paw.ini', 'section': 5},
+                   {'name': 'footclient', 'out_name': 'pawclient', 'section': 1},
+                   {'name': 'foot-ctlseqs', 'out_name': 'paw-ctlseqs', 'section': 7}]
   name = man_src['name']
+  out_name = man_src['out_name']
   section = man_src['section']
-  out = '@0@.@1@'.format(name, section)
+  out = '@0@.@1@'.format(out_name, section)
 
   preprocessed = configure_file(
     input: '@0@.@1@.scd'.format(name, section),
