@@ -43,8 +43,8 @@ Test convention: foot runs `UNITTEST { ... }` blocks as constructors in debug bu
 
 ## 7. Unicode placeholders
 
-- [ ] 7.1 Add `scripts/generate-kitty-diacritics.py` and the generated `kitty-diacritics.h` (design D9). Verify: unit check that U+0305 is 0, U+030D is 1, U+030E is 2, and that the table has 297 entries.
-- [ ] 7.2 Implement virtual placements (`U=1`) and their delete rules. Verify: unit check that `d=a` keeps a virtual placement and `d=i` deletes it.
+- [x] 7.1 Add `scripts/generate-kitty-diacritics.py` and the generated `kitty-diacritics.h` (design D9). Verify: unit check that U+0305 is 0, U+030D is 1, U+030E is 2, and that the table has 297 entries.
+- [x] 7.2 Implement virtual placements (`U=1`) and their delete rules. Verify: unit check that `d=a` keeps a virtual placement and `d=i` deletes it.
 - [ ] 7.3 Implement hook B (`kitty_render_placeholder` before glyph lookup in `render_cell`): decode the id, the high byte, the placement id, the row and column, the inheritance rules, and the fit and centering (design D8, spec kitty-graphics-placeholders). Verify: unit checks for decoding a cell with 0, 1, 2, and 3 diacritics and for the three inheritance rules. Live check: the two `printf` examples from the kitty spec for image 42 (after `a=T,U=1,i=42,c=2,r=2,q=2`) show the image. `kitten icat --unicode-placeholder <img>` shows the image.
 - [ ] 7.4 Live check inside tmux (`set -g allow-passthrough on`): `kitten icat <img>` shows the image in the pane, and the image scrolls with the pane.
 
