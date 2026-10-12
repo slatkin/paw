@@ -390,7 +390,7 @@ fdm_client(struct fdm *fdm, int fd, int events, void *data)
 
     instance->terminal = term_init(
         conf != NULL ? conf : server->conf,
-        server->fdm, server->reaper, server->wayl, "footclient", cwd, token,
+        server->fdm, server->reaper, server->wayl, "pawclient", cwd, token,
         NULL, cdata.argc, argv, (const char *const *)envp,
         &term_shutdown_handler, instance);
 

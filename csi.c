@@ -1768,7 +1768,7 @@ csi_dispatch(struct terminal *term, uint8_t final)
 
             char reply[64];
             size_t n = xsnprintf(
-                reply, sizeof(reply), "\033P>|foot(%u.%u.%u%s%s)\033\\",
+                reply, sizeof(reply), "\033P>|paw(%u.%u.%u%s%s)\033\\",
                 FOOT_MAJOR, FOOT_MINOR, FOOT_PATCH,
                 FOOT_EXTRA[0] != '\0' ? "-" : "", FOOT_EXTRA);
             term_to_slave(term, reply, n);

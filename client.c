@@ -392,7 +392,7 @@ main(int argc, char *const *argv)
     if (server_socket_path != NULL) {
         strncpy(addr.sun_path, server_socket_path, sizeof(addr.sun_path) - 1);
         if (connect(fd, (const struct sockaddr *)&addr, sizeof(addr)) < 0) {
-            LOG_ERR("%s: failed to connect (is 'foot --server' running?)", server_socket_path);
+            LOG_ERR("%s: failed to connect (is 'paw --server' running?)", server_socket_path);
             goto err;
         }
     } else {
@@ -403,24 +403,24 @@ main(int argc, char *const *argv)
             const char *wayland_display = getenv("WAYLAND_DISPLAY");
             if (wayland_display != NULL) {
                 snprintf(addr.sun_path, sizeof(addr.sun_path),
-                         "%s/foot-%s.sock", xdg_runtime, wayland_display);
+                         "%s/paw-%s.sock", xdg_runtime, wayland_display);
                 connected = (connect(fd, (const struct sockaddr *)&addr, sizeof(addr)) == 0);
             }
             if (!connected) {
-                LOG_WARN("%s: failed to connect, will now try %s/foot.sock",
+                LOG_WARN("%s: failed to connect, will now try %s/paw.sock",
                          addr.sun_path, xdg_runtime);
                 snprintf(addr.sun_path, sizeof(addr.sun_path),
-                         "%s/foot.sock", xdg_runtime);
+                         "%s/paw.sock", xdg_runtime);
                 connected = (connect(fd, (const struct sockaddr *)&addr, sizeof(addr)) == 0);
             }
             if (!connected)
-                LOG_WARN("%s: failed to connect, will now try /tmp/foot.sock", addr.sun_path);
+                LOG_WARN("%s: failed to connect, will now try /tmp/paw.sock", addr.sun_path);
         }
 
         if (!connected) {
-            strncpy(addr.sun_path, "/tmp/foot.sock", sizeof(addr.sun_path) - 1);
+            strncpy(addr.sun_path, "/tmp/paw.sock", sizeof(addr.sun_path) - 1);
             if (connect(fd, (const struct sockaddr *)&addr, sizeof(addr)) < 0) {
-                LOG_ERRNO("failed to connect (is 'foot --server' running?)");
+                LOG_ERRNO("failed to connect (is 'paw --server' running?)");
                 goto err;
             }
         }

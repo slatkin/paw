@@ -431,9 +431,9 @@ open_config(void)
 
     /* First, check XDG_CONFIG_HOME (or .config, if unset) */
     if (xdg_config_home != NULL && xdg_config_home[0] != '\0')
-        path = xstrjoin(xdg_config_home, "/foot/foot.ini");
+        path = xstrjoin(xdg_config_home, "/paw/paw.ini");
     else if (home_dir != NULL)
-        path = xstrjoin(home_dir, "/.config/foot/foot.ini");
+        path = xstrjoin(home_dir, "/.config/paw/paw.ini");
 
     if (path != NULL) {
         LOG_DBG("checking for %s", path);
@@ -458,7 +458,7 @@ open_config(void)
          conf_dir = strtok(NULL, ":"))
     {
         free(path);
-        path = xstrjoin(conf_dir, "/foot/foot.ini");
+        path = xstrjoin(conf_dir, "/paw/paw.ini");
 
         LOG_DBG("checking for %s", path);
         int fd = open(path, O_RDONLY | O_CLOEXEC);
@@ -3340,14 +3340,14 @@ get_server_socket_path(void)
 {
     const char *xdg_runtime = getenv("XDG_RUNTIME_DIR");
     if (xdg_runtime == NULL)
-        return xstrdup("/tmp/foot.sock");
+        return xstrdup("/tmp/paw.sock");
 
     const char *wayland_display = getenv("WAYLAND_DISPLAY");
     if (wayland_display == NULL) {
-        return xstrjoin(xdg_runtime, "/foot.sock");
+        return xstrjoin(xdg_runtime, "/paw.sock");
     }
 
-    return xasprintf("%s/foot-%s.sock", xdg_runtime, wayland_display);
+    return xasprintf("%s/paw-%s.sock", xdg_runtime, wayland_display);
 }
 
 static config_modifier_list_t
@@ -3510,8 +3510,8 @@ config_load(struct config *conf, const char *conf_path,
         .conf_path = (conf_path ? xstrdup(conf_path) : NULL),
         .term = xstrdup(FOOT_DEFAULT_TERM),
         .shell = get_shell(),
-        .title = xstrdup("foot"),
-        .app_id = (as_server ? xstrdup("footclient") : xstrdup("foot")),
+        .title = xstrdup("paw"),
+        .app_id = (as_server ? xstrdup("pawclient") : xstrdup("paw")),
         .toplevel_tag = xstrdup(""),
         .word_delimiters = xc32dup(U",│`|:\"'()[]{}<>"),
         .size = {

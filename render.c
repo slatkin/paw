@@ -4297,7 +4297,7 @@ render_update_title(struct terminal *term)
 {
     static const size_t max_len = 2048;
 
-    const char *title = term->window_title != NULL ? term->window_title : "foot";
+    const char *title = term->window_title != NULL ? term->window_title : "paw";
     char *copy = NULL;
 
     if (strlen(title) > max_len) {

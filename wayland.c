@@ -2132,7 +2132,7 @@ wayl_win_init(struct terminal *term, const char *token)
         struct xdg_toplevel_icon_v1 *icon =
             xdg_toplevel_icon_manager_v1_create_icon(wayl->toplevel_icon_manager);
         xdg_toplevel_icon_v1_set_name(icon, streq(
-            app_id, "footclient") ? "foot" : app_id);
+            app_id, "pawclient") ? "paw" : app_id);
         xdg_toplevel_icon_manager_v1_set_icon(
             wayl->toplevel_icon_manager, win->xdg_toplevel, icon);
         xdg_toplevel_icon_v1_destroy(icon);
