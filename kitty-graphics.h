@@ -104,6 +104,7 @@ void kitty_scroll_up(
 void kitty_scroll_down(
     struct terminal *term, struct scroll_region region, int rows);
 void kitty_clear_visible(struct terminal *term);
+void kitty_scrollback_clear(struct terminal *term);
 void kitty_alt_screen_clear(struct terminal *term);
 void kitty_reset(struct terminal *term);
 void kitty_cell_size_changed(struct terminal *term);

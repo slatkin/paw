@@ -82,6 +82,9 @@ uint32_t kitty_image_store_alloc_id(struct kitty_image_store *store);
  */
 bool kitty_image_store_delete_id(struct kitty_image_store *store, uint32_t id);
 
+/* Remove every image that has no placement left. */
+void kitty_image_store_delete_unreferenced(struct kitty_image_store *store);
+
 /*
  * Insert a decoded image. Takes ownership of image->data and
  * image->pix. An image with the same id is replaced.

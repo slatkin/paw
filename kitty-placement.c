@@ -214,6 +214,153 @@ kitty_placement_dirty(struct terminal *term, struct kitty_placement *p)
     }
 }
 
+static void
+placement_unlink(
+    struct kitty_placement_store *store, struct kitty_placement *p)
+{
+    if (p->image != NULL && p->image->placements > 0)
+        p->image->placements--;
+    kitty_placement_cache_free(store, p);
+}
+
+/*
+ * True when the placement overlaps the real screen rows (the ones
+ * term_erase() and term_erase_scrollback() act on), regardless of the
+ * current scroll view. Screen rows are the last term->rows rows of the
+ * ring: their scrollback-relative index is >= history.
+ */
+static bool
+placement_overlaps_screen(
+    struct terminal *term, const struct kitty_placement *p)
+{
+    const struct grid *grid = term->grid;
+    const int num_rows = grid->num_rows;
+
+    if (num_rows <= 0 || p->rows <= 0 || p->rows > num_rows)
+        return false;
+
+    const int history = num_rows - term->rows;
+    const int sb = grid_row_abs_to_sb(grid, term->rows, p->row);
+
+    if (sb >= history)
+        return true;
+
+    /* Anchor in the scrollback: the body reaches the screen when it
+     * spans past the first screen row without wrapping the ring. */
+    return p->rows > history - sb;
+}
+
+/*
+ * Clear screen (CSI 2 J and CSI 3 J): delete every placement that is
+ * visible on the current screen, then free the images that no
+ * placement refers to any more (kitty does this; spec: Clear,
+ * alternate screen, and reset).
+ */
+void
+kitty_clear_visible(struct terminal *term)
+{
+    if (term->kitty == NULL)
+        return;
+
+    struct kitty_placement_store *store = kitty_placement_store_for(term);
+    struct kitty_image_store *images = kitty_image_store_for(term);
+
+    tll_foreach(store->placements, it) {
+        struct kitty_placement *p = &it->item;
+        if (p->virtual_placement)
+            continue;
+
+        if (!placement_overlaps_screen(term, p))
+            continue;
+
+        kitty_placement_dirty(term, p);
+        placement_unlink(store, p);
+        kitty_placement_remove(store, it);
+    }
+
+    kitty_image_store_delete_unreferenced(images);
+}
+
+/*
+ * Scrollback erase (CSI 3 J): delete every placement that is not on
+ * screen, since its rows are about to be wiped. Then free the images
+ * that no placement refers to any more.
+ */
+void
+kitty_scrollback_clear(struct terminal *term)
+{
+    if (term->kitty == NULL)
+        return;
+
+    struct kitty_placement_store *store = kitty_placement_store_for(term);
+    struct kitty_image_store *images = kitty_image_store_for(term);
+
+    tll_foreach(store->placements, it) {
+        struct kitty_placement *p = &it->item;
+        if (p->virtual_placement)
+            continue;
+
+        if (placement_overlaps_screen(term, p))
+            continue;
+
+        placement_unlink(store, p);
+        kitty_placement_remove(store, it);
+    }
+
+    kitty_image_store_delete_unreferenced(images);
+}
+
+/*
+ * Reflow (design D7): move every placement of the main screen by the
+ * same number of lines as the cursor, then drop the placements that
+ * fall outside the new ring. The placement store is passed explicitly,
+ * because the alternate screen may be active while the normal grid
+ * reflows.
+ *
+ * Rows are compared in scrollback-relative coordinates: after a reflow
+ * the ring is rebuilt and absolute rows have no meaning. Any consistent
+ * screen height can be used for the old coordinates; only the
+difference with the new height matters, and the constant cancels.
+ */
+void
+kitty_placement_reflow(
+    struct terminal *term, struct kitty_placement_store *store,
+    int old_offset, int old_num_rows, int old_screen_rows, int delta)
+{
+    const struct grid *grid = &term->normal;
+    const int new_rows = grid->num_rows;
+    const int screen_rows = term->rows;
+
+    if (new_rows <= 0 || old_num_rows <= 0 || screen_rows <= 0)
+        return;
+
+    const bool main_active = term->grid == &term->normal;
+
+    tll_foreach(store->placements, it) {
+        struct kitty_placement *p = &it->item;
+        if (p->virtual_placement)
+            continue;
+
+        const int old_sb =
+            (p->row - (old_offset + old_screen_rows) + old_num_rows) &
+            (old_num_rows - 1);
+        const int64_t sb = (int64_t)old_sb + delta;
+
+        if (sb < 0 || sb >= new_rows) {
+            if (main_active)
+                kitty_placement_dirty(term, p);
+            placement_unlink(store, p);
+            kitty_placement_remove(store, it);
+            continue;
+        }
+
+        p->row = ((int)sb + grid->offset + screen_rows) & (new_rows - 1);
+
+        if (main_active)
+            kitty_placement_dirty(term, p);
+    }
+}
+
 const char *
 kitty_placement_put(
     struct terminal *term, const struct kitty_command *cmd,
@@ -1243,5 +1390,128 @@ UNITTEST
     tll_free(term.grid->scroll_damage);
     for (int i = 0; i < term.normal.num_rows; i++)
         grid_row_free(term.normal.rows[i]);
+    free(term.normal.rows);
+}
+
+UNITTEST
+{
+    /*
+     * Clear screen (CSI 2 J): only the placements visible on screen
+     * are dropped. A placement in the scrollback stays. Images left
+     * with no placement are freed (kitty does this).
+     */
+    struct terminal term;
+    SCROLL_TERM(term);
+
+    SCROLL_PLACE(term, 9, 0, 1, 1, 1, 1);  /* will scroll into history */
+    SCROLL_DO_UP(term, 0, 4, 1);           /* offset = 1; image 9 off screen */
+
+    SCROLL_PLACE(term, 10, 1, 1, 1, 1, 1); /* visible at screen row 1 */
+
+    xassert(SCROLL_COUNT(term) == 2);
+    xassert(kitty_image_store_find_id(kitty_image_store_for(&term), 10) != NULL);
+
+    kitty_clear_visible(&term);
+
+    xassert(SCROLL_COUNT(term) == 1);
+    xassert(scroll_test_find(&term, 9) != NULL);
+    xassert(scroll_test_find(&term, 10) == NULL);
+
+    xassert(kitty_image_store_find_id(kitty_image_store_for(&term), 9) != NULL);
+    xassert(kitty_image_store_find_id(kitty_image_store_for(&term), 10) == NULL);
+
+    kitty_fini(&term);
+    free(term.normal.rows);
+}
+
+UNITTEST
+{
+    /*
+     * Scrollback erase (CSI 3 J): only the placements in the
+     * scrollback are dropped; the visible one stays.
+     */
+    struct terminal term;
+    SCROLL_TERM(term);
+
+    SCROLL_PLACE(term, 9, 0, 1, 1, 1, 1);
+    SCROLL_DO_UP(term, 0, 4, 1);           /* image 9 in history */
+
+    SCROLL_PLACE(term, 10, 1, 1, 1, 1, 1); /* visible */
+
+    xassert(SCROLL_COUNT(term) == 2);
+
+    kitty_scrollback_clear(&term);
+
+    xassert(SCROLL_COUNT(term) == 1);
+    xassert(scroll_test_find(&term, 9) == NULL);
+    xassert(scroll_test_find(&term, 10) != NULL);
+    xassert(kitty_image_store_find_id(kitty_image_store_for(&term), 9) == NULL);
+    xassert(kitty_image_store_find_id(kitty_image_store_for(&term), 10) != NULL);
+
+    kitty_fini(&term);
+    free(term.normal.rows);
+}
+
+UNITTEST
+{
+    /*
+     * Reflow: every main-screen anchor moves by the cursor delta in
+     * scrollback-relative coordinates. An anchor pushed above the
+     * oldest line is deleted.
+     */
+    struct terminal term;
+    SCROLL_TERM(term);
+
+    SCROLL_PLACE(term, 9, 1, 1, 1, 1, 1);
+    struct kitty_placement *p = scroll_test_find(&term, 9);
+    xassert(p != NULL);
+    const int abs_row = p->row;
+
+    kitty_placement_reflow(
+        &term, kitty_placement_store_for(&term),
+        term.normal.offset, term.normal.num_rows, term.rows, 1);
+
+    p = scroll_test_find(&term, 9);
+    xassert(p != NULL);
+    xassert(p->row == ((abs_row + 1) & (term.normal.num_rows - 1)));
+
+    /* A large negative delta pushes the anchor out of the ring. */
+    kitty_placement_reflow(
+        &term, kitty_placement_store_for(&term),
+        term.normal.offset, term.normal.num_rows, term.rows,
+        -term.normal.num_rows);
+
+    xassert(scroll_test_find(&term, 9) == NULL);
+
+    kitty_fini(&term);
+    free(term.normal.rows);
+}
+
+UNITTEST
+{
+    /*
+     * A cell size change keeps the cell span and the anchor, and drops
+     * only the scaled cache (design D5).
+     */
+    struct terminal term;
+    SCROLL_TERM(term);
+
+    SCROLL_PLACE(term, 9, 1, 2, 3, 1, 1);
+    struct kitty_placement *p = scroll_test_find(&term, 9);
+    xassert(p != NULL);
+    xassert(p->cols == 2 && p->rows == 3);
+    const int row = p->row, col = p->col;
+
+    term.cell_width = 16;
+    term.cell_height = 32;
+    kitty_cell_size_changed(&term);
+
+    p = scroll_test_find(&term, 9);
+    xassert(p != NULL);
+    xassert(p->cols == 2 && p->rows == 3);
+    xassert(p->row == row && p->col == col);
+    xassert(p->cache_pix == NULL && p->cache_bytes == 0);
+
+    kitty_fini(&term);
     free(term.normal.rows);
 }

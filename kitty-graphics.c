@@ -8,6 +8,8 @@
 #include "kitty-file.h"
 #include "kitty-placement.h"
 
+#include "grid.h"
+
 #define LOG_MODULE "kitty-graphics"
 #define LOG_ENABLE_DBG 0
 #include "log.h"
@@ -57,6 +59,15 @@ struct kitty_graphics {
         struct kitty_image_store image_store;
         struct kitty_placement_store placement_store;
     } screens[2];
+
+    /* Reflow state (design D7). */
+    struct {
+        bool active;
+        int old_offset;
+        int old_num_rows;
+        int old_screen_rows;
+        int cursor_sb;
+    } reflow;
 };
 
 static int
@@ -92,6 +103,26 @@ kitty_command_init(struct kitty_command *cmd)
     cmd->compression = KITTY_COMPRESSION_NONE;
 }
 
+static void
+kitty_screen_init(struct kitty_graphics *kitty, int idx)
+{
+    kitty_image_store_init(&kitty->screens[idx].image_store);
+    kitty_placement_store_init(&kitty->screens[idx].placement_store);
+
+    /* Keep placements in sync when an image is replaced or evicted. */
+    kitty->screens[idx].image_store.on_remove =
+        kitty_placement_on_image_removed;
+    kitty->screens[idx].image_store.on_remove_user =
+        &kitty->screens[idx].placement_store;
+}
+
+static void
+kitty_screen_fini(struct kitty_graphics *kitty, int idx)
+{
+    kitty_placement_store_fini(&kitty->screens[idx].placement_store);
+    kitty_image_store_fini(&kitty->screens[idx].image_store);
+}
+
 void
 kitty_init(struct terminal *term)
 {
@@ -99,16 +130,8 @@ kitty_init(struct terminal *term)
     term->kitty = xcalloc(1, sizeof(struct kitty_graphics));
     term->kitty->term = term;
 
-    for (int i = 0; i < 2; i++) {
-        kitty_image_store_init(&term->kitty->screens[i].image_store);
-        kitty_placement_store_init(&term->kitty->screens[i].placement_store);
-
-        /* Keep placements in sync when an image is replaced or evicted. */
-        term->kitty->screens[i].image_store.on_remove =
-            kitty_placement_on_image_removed;
-        term->kitty->screens[i].image_store.on_remove_user =
-            &term->kitty->screens[i].placement_store;
-    }
+    for (int i = 0; i < 2; i++)
+        kitty_screen_init(term->kitty, i);
 }
 
 void
@@ -117,10 +140,9 @@ kitty_fini(struct terminal *term)
     if (term->kitty == NULL)
         return;
 
-    for (int i = 0; i < 2; i++) {
-        kitty_placement_store_fini(&term->kitty->screens[i].placement_store);
-        kitty_image_store_fini(&term->kitty->screens[i].image_store);
-    }
+    for (int i = 0; i < 2; i++)
+        kitty_screen_fini(term->kitty, i);
+
     free(term->kitty->apc.data);
     free(term->kitty->chunk.data);
     free(term->kitty);
@@ -883,33 +905,101 @@ kitty_apc_end(struct terminal *term)
 }
 
 void
-kitty_clear_visible(struct terminal *term)
-{
-}
-
-void
 kitty_alt_screen_clear(struct terminal *term)
 {
+    if (term->kitty == NULL)
+        return;
+
+    /* The alternate screen always starts empty (design D5). */
+    kitty_screen_fini(term->kitty, 1);
+    kitty_screen_init(term->kitty, 1);
 }
 
 void
 kitty_reset(struct terminal *term)
 {
+    if (term->kitty == NULL)
+        return;
+
+    for (int i = 0; i < 2; i++) {
+        kitty_screen_fini(term->kitty, i);
+        kitty_screen_init(term->kitty, i);
+    }
+
+    kitty_chunk_reset(term->kitty);
+    term->kitty->reflow.active = false;
 }
 
 void
 kitty_cell_size_changed(struct terminal *term)
 {
+    if (term->kitty == NULL)
+        return;
+
+    /*
+     * The cell span of a placement stays; only the scaled cache is
+     * rebuilt at the new cell size, on the next frame (design D5).
+     */
+    for (int i = 0; i < 2; i++) {
+        struct kitty_placement_store *store =
+            &term->kitty->screens[i].placement_store;
+        tll_foreach(store->placements, it)
+            kitty_placement_cache_free(store, &it->item);
+    }
 }
 
 void
 kitty_reflow_begin(struct terminal *term)
 {
+    struct kitty_graphics *kitty = term->kitty;
+    if (kitty == NULL)
+        return;
+
+    /*
+     * During an interactive resize the reflow source is the stashed
+     * original grid; otherwise it is the normal grid (design D7).
+     */
+    const struct grid *grid =
+        term->interactive_resizing.grid != NULL
+        ? term->interactive_resizing.grid
+        : &term->normal;
+
+    if (grid->num_rows <= 0 || term->rows <= 0)
+        return;
+
+    const int abs_row =
+        (grid->offset + grid->cursor.point.row) & (grid->num_rows - 1);
+
+    kitty->reflow.old_offset = grid->offset;
+    kitty->reflow.old_num_rows = grid->num_rows;
+    kitty->reflow.old_screen_rows = term->rows;
+    kitty->reflow.cursor_sb =
+        grid_row_abs_to_sb(grid, term->rows, abs_row);
+    kitty->reflow.active = true;
 }
 
 void
 kitty_reflow_end(struct terminal *term)
 {
+    struct kitty_graphics *kitty = term->kitty;
+    if (kitty == NULL || !kitty->reflow.active)
+        return;
+
+    kitty->reflow.active = false;
+
+    const struct grid *grid = &term->normal;
+    if (grid->num_rows <= 0 || term->rows <= 0)
+        return;
+
+    const int abs_row =
+        (grid->offset + grid->cursor.point.row) & (grid->num_rows - 1);
+    const int new_sb = grid_row_abs_to_sb(grid, term->rows, abs_row);
+    const int delta = new_sb - kitty->reflow.cursor_sb;
+
+    kitty_placement_reflow(
+        term, &kitty->screens[0].placement_store,
+        kitty->reflow.old_offset, kitty->reflow.old_num_rows,
+        kitty->reflow.old_screen_rows, delta);
 }
 
 /* The render hooks (A, B, C) live in kitty-render.c. */
@@ -1170,6 +1260,83 @@ UNITTEST
         kitty_image_store_find_id(&term.kitty->screens[0].image_store, 2);
     xassert(img != NULL);
     xassert(img->width == 2 && img->height == 2);
+
+    kitty_fini(&term);
+}
+
+UNITTEST
+{
+    /*
+     * Leaving the alternate screen drops all of its images and
+     * placements, and leaves the main screen alone (spec: Clear,
+     * alternate screen, and reset).
+     */
+    struct terminal term = {0};
+    term.ptmx = -1;
+    kitty_init(&term);
+
+    static const char img[] =
+        "\x1b_Ga=t,i=1,f=24,s=1,v=1;AAAA\x1b\\";
+    static const char img2[] =
+        "\x1b_Ga=t,i=2,f=24,s=1,v=1;AAAA\x1b\\";
+
+    /* Image 1 and image 2 on the main screen. */
+    vt_from_slave(&term, (const uint8_t *)img, sizeof(img) - 1);
+    vt_from_slave(&term, (const uint8_t *)img2, sizeof(img2) - 1);
+    xassert(kitty_image_store_find_id(
+                &term.kitty->screens[0].image_store, 1) != NULL);
+    xassert(kitty_image_store_find_id(
+                &term.kitty->screens[0].image_store, 2) != NULL);
+
+    /* Image 1 on the alternate screen too (same id, separate store). */
+    term.grid = &term.alt;
+    vt_from_slave(&term, (const uint8_t *)img, sizeof(img) - 1);
+    xassert(kitty_image_store_find_id(
+                &term.kitty->screens[1].image_store, 1) != NULL);
+
+    kitty_alt_screen_clear(&term);
+
+    xassert(tll_length(term.kitty->screens[1].image_store.images) == 0);
+    xassert(kitty_image_store_find_id(
+                &term.kitty->screens[0].image_store, 1) != NULL);
+    xassert(kitty_image_store_find_id(
+                &term.kitty->screens[0].image_store, 2) != NULL);
+
+    kitty_fini(&term);
+}
+
+UNITTEST
+{
+    /*
+     * RIS deletes all placements and images on both screens, and
+     * cancels an in-progress chunked transfer.
+     */
+    struct terminal term = {0};
+    term.ptmx = -1;
+    kitty_init(&term);
+
+    static const char main_img[] =
+        "\x1b_Ga=t,i=1,f=24,s=1,v=1;AAAA\x1b\\";
+    static const char alt_img[] =
+        "\x1b_Ga=t,i=2,f=24,s=1,v=1;AAAA\x1b\\";
+    static const char chunk[] =
+        "\x1b_Ga=t,i=3,f=24,s=1,v=1,m=1;AAAA\x1b\\";
+
+    vt_from_slave(&term, (const uint8_t *)main_img, sizeof(main_img) - 1);
+    term.grid = &term.alt;
+    vt_from_slave(&term, (const uint8_t *)alt_img, sizeof(alt_img) - 1);
+    term.grid = &term.normal;
+    vt_from_slave(&term, (const uint8_t *)chunk, sizeof(chunk) - 1);
+
+    xassert(tll_length(term.kitty->screens[0].image_store.images) == 1);
+    xassert(tll_length(term.kitty->screens[1].image_store.images) == 1);
+    xassert(term.kitty->chunk.active);
+
+    kitty_reset(&term);
+
+    xassert(tll_length(term.kitty->screens[0].image_store.images) == 0);
+    xassert(tll_length(term.kitty->screens[1].image_store.images) == 0);
+    xassert(!term.kitty->chunk.active);
 
     kitty_fini(&term);
 }

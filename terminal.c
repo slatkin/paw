@@ -860,6 +860,7 @@ term_set_fonts(struct terminal *term, struct fcft_font *fonts[static 4],
     LOG_INFO("cell width=%d, height=%d", term->cell_width, term->cell_height);
 
     sixel_cell_size_changed(term);
+    kitty_cell_size_changed(term);
 
     /* Optimization - some code paths (are forced to) call
      * render_resize() after this function */
@@ -2163,6 +2164,9 @@ term_reset(struct terminal *term, bool hard)
         tll_remove(term->alt.sixel_images, it);
     }
 
+    if (hard)
+        kitty_reset(term);
+
     notify_free(term, &term->kitty_notification);
     tll_foreach(term->active_notifications, it) {
         notify_free(term, &it->item);
@@ -2746,6 +2750,8 @@ term_erase_scrollback(struct terminal *term)
             tll_remove(term->grid->sixel_images, it);
         }
     }
+
+    kitty_scrollback_clear(term);
 
     for (int i = start;; i = (i + 1) & mask) {
         struct row *row = term->grid->rows[i];

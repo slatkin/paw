@@ -17,6 +17,7 @@
 #include "config.h"
 #include "debug.h"
 #include "grid.h"
+#include "kitty-graphics.h"
 #include "selection.h"
 #include "sixel.h"
 #include "util.h"
@@ -534,6 +535,7 @@ decset_decrst(struct terminal *term, unsigned param, bool enable)
                 sixel_destroy(&it->item);
                 tll_remove(term->alt.sixel_images, it);
             }
+            kitty_alt_screen_clear(term);
 
             tll_free(term->alt.scroll_damage);
             term_damage_view(term);
@@ -999,10 +1001,12 @@ csi_dispatch(struct terminal *term, uint8_t final)
                 /* Erase entire screen */
                 term_erase(term, 0, 0, term->rows - 1, term->cols - 1);
                 term->grid->cursor.lcf = false;
+                kitty_clear_visible(term);
                 break;
 
             case 3: {
                 /* Erase scrollback */
+                kitty_clear_visible(term);
                 term_erase_scrollback(term);
                 break;
             }

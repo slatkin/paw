@@ -132,6 +132,26 @@ kitty_image_store_delete_id(struct kitty_image_store *store, uint32_t id)
 }
 
 /*
+ * Delete every image that has no placement. Kitty frees such images
+ * after a screen clear (spec: Clear, alternate screen, and reset).
+ */
+void
+kitty_image_store_delete_unreferenced(struct kitty_image_store *store)
+{
+    tll_foreach(store->images, it) {
+        if (it->item.placements > 0)
+            continue;
+
+        if (store->on_remove != NULL)
+            store->on_remove(store->on_remove_user, it->item.id);
+
+        store->bytes -= it->item.size;
+        kitty_image_destroy(&it->item);
+        tll_remove(store->images, it);
+    }
+}
+
+/*
  * Delete the oldest image that does ('with_placements') or does not
  * ('!with_placements') have placements. Returns false when the list
  * holds no such image.

@@ -142,3 +142,12 @@ void kitty_placement_cache_free(
 
 /* Mark the cells covered by a placement dirty. */
 void kitty_placement_dirty(struct terminal *term, struct kitty_placement *p);
+
+/*
+ * Reflow: shift every placement of 'store' by 'delta' rows in
+ * scrollback-relative coordinates, using the old grid geometry, and
+ * drop the placements that leave the new ring (design D7).
+ */
+void kitty_placement_reflow(
+    struct terminal *term, struct kitty_placement_store *store,
+    int old_offset, int old_num_rows, int old_screen_rows, int delta);

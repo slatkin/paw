@@ -4405,6 +4405,7 @@ delayed_reflow_of_normal_grid(struct terminal *term)
 
     /* Reflow the original (since before the resize was started) grid,
      * to the *current* dimensions */
+    kitty_reflow_begin(term);
     grid_resize_and_reflow(
         term->interactive_resizing.grid, term,
         term->interactive_resizing.new_rows, term->normal.num_cols,
@@ -4435,6 +4436,7 @@ delayed_reflow_of_normal_grid(struct terminal *term)
 
     tll_free(term->normal.scroll_damage);
     sixel_reflow_grid(term, &term->normal);
+    kitty_reflow_end(term);
 
     if (term->grid == &term->normal) {
         term_damage_view(term);
@@ -4924,6 +4926,7 @@ render_resize(struct terminal *term, int width, int height, uint8_t opts)
             &term->selection.coords.end,
         };
 
+        kitty_reflow_begin(term);
         grid_resize_and_reflow(
             &term->normal, term, new_normal_grid_rows, new_cols, old_normal_rows, new_rows,
             term->selection.coords.end.row >= 0 ? ALEN(tracking_points) : 0,
@@ -4942,6 +4945,7 @@ render_resize(struct terminal *term, int width, int height, uint8_t opts)
     term->rows = new_rows;
 
     sixel_reflow(term);
+    kitty_reflow_end(term);
 
     LOG_DBG("resized: grid: cols=%d, rows=%d "
             "(left-margin=%d, right-margin=%d, top-margin=%d, bottom-margin=%d)",
