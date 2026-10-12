@@ -493,20 +493,14 @@ kitty_handle_transmit(struct terminal *term, const struct kitty_command *cmd,
                       const char *payload, size_t payload_len)
 {
     struct kitty_graphics *kitty = term->kitty;
-
-    if (cmd->medium != KITTY_MEDIUM_DIRECT) {
-        kitty_reply(
-            term, cmd, cmd->has_id ? cmd->id : 0, false,
-            "EINVAL:unsupported transmission medium");
-        return;
-    }
-
     struct kitty_image_store *store = kitty_image_store_for(term);
 
     /*
      * Chunked transfer. A transmit command that arrives while a
      * transfer is in progress is a continuation of it; its control
-     * data (apart from m) is ignored.
+     * data (apart from m) is ignored. In particular, the medium of
+     * the first chunk applies to the whole transfer, so a continuation
+     * is never rejected for a non-direct medium.
      */
     if (kitty->chunk.active) {
         if (!kitty_chunk_append(kitty, payload, payload_len)) {
@@ -548,6 +542,13 @@ kitty_handle_transmit(struct terminal *term, const struct kitty_command *cmd,
         }
 
         kitty_reply(term, &first, id, true, "OK");
+        return;
+    }
+
+    if (cmd->medium != KITTY_MEDIUM_DIRECT) {
+        kitty_reply(
+            term, cmd, cmd->has_id ? cmd->id : 0, false,
+            "EINVAL:unsupported transmission medium");
         return;
     }
 
@@ -655,16 +656,12 @@ kitty_handle_apc(struct terminal *term, const char *data, size_t len)
         return;
     }
 
-    if (cmd.action != KITTY_ACTION_TRANSMIT &&
-        cmd.action != KITTY_ACTION_TRANSMIT_AND_DISPLAY)
-    {
-        /* Any other command aborts an in-progress transfer. */
-        kitty_chunk_reset(kitty);
-    }
-
-    /* Relative placements are not supported. */
+    /*
+     * Relative placements are not supported. This is a rejection:
+     * it changes no state (spec: Unsupported actions), so an
+     * in-progress transfer is left alone.
+     */
     if (cmd.has_parent_id || cmd.has_parent_placement) {
-        kitty_chunk_reset(kitty);
         kitty_reply(
             term, &cmd, cmd.has_id ? cmd.id : 0, false,
             "EINVAL:relative placement not supported");
@@ -1001,6 +998,83 @@ UNITTEST
     vt_from_slave(&term, (const uint8_t *)relative, sizeof(relative) - 1);
 
     xassert(tll_length(term.kitty->screens[0].images) == 0);
+
+    kitty_fini(&term);
+}
+
+UNITTEST
+{
+    /*
+     * A continuation chunk may carry a non-direct medium. Its control
+     * data is ignored, so the transfer must still complete with the
+     * correct data (the medium of the first chunk applies throughout).
+     */
+    struct terminal term = {0};
+    term.ptmx = -1;
+    kitty_init(&term);
+
+    static const char chunk1[] =
+        "\x1b_Ga=t,i=1,f=24,s=2,v=2,m=1;AAAA\x1b\\";
+    static const char chunk2[] = "\x1b_Gt=f,m=1;AAAA\x1b\\";
+    static const char chunk3[] = "\x1b_Gm=0;AAAAAAAA\x1b\\";
+
+    vt_from_slave(&term, (const uint8_t *)chunk1, sizeof(chunk1) - 1);
+    vt_from_slave(&term, (const uint8_t *)chunk2, sizeof(chunk2) - 1);
+    xassert(term.kitty->chunk.active);
+
+    vt_from_slave(&term, (const uint8_t *)chunk3, sizeof(chunk3) - 1);
+    xassert(!term.kitty->chunk.active);
+
+    struct kitty_image *img =
+        kitty_image_store_find_id(&term.kitty->screens[0], 1);
+    xassert(img != NULL);
+    xassert(img->width == 2 && img->height == 2);
+    xassert(img->data[0] == 0xff000000u);
+
+    kitty_fini(&term);
+}
+
+UNITTEST
+{
+    /*
+     * Rejected actions and relative placements change no state, and
+     * only a=d cancels a transfer. An in-progress transfer therefore
+     * survives a rejection and completes with all of its data.
+     */
+    struct terminal term = {0};
+    term.ptmx = -1;
+    kitty_init(&term);
+
+    static const char chunk1[] =
+        "\x1b_Ga=t,i=2,f=24,s=2,v=2,m=1;AAAA\x1b\\";
+    static const char frame[] = "\x1b_Ga=f,i=2;AAAA\x1b\\";
+    static const char relative[] =
+        "\x1b_Ga=t,i=2,P=1,f=24,s=2,v=2,m=1;AAAA\x1b\\";
+    static const char chunk2[] = "\x1b_Gm=1;AAAA\x1b\\";
+    static const char chunk3[] = "\x1b_Gm=0;AAAAAAAA\x1b\\";
+
+    vt_from_slave(&term, (const uint8_t *)chunk1, sizeof(chunk1) - 1);
+    xassert(term.kitty->chunk.active);
+    const size_t len = term.kitty->chunk.len;
+
+    /* a=f: rejected, transfer untouched. */
+    vt_from_slave(&term, (const uint8_t *)frame, sizeof(frame) - 1);
+    xassert(term.kitty->chunk.active);
+    xassert(term.kitty->chunk.len == len);
+
+    /* P=1: rejected, transfer untouched. */
+    vt_from_slave(&term, (const uint8_t *)relative, sizeof(relative) - 1);
+    xassert(term.kitty->chunk.active);
+    xassert(term.kitty->chunk.len == len);
+
+    vt_from_slave(&term, (const uint8_t *)chunk2, sizeof(chunk2) - 1);
+    vt_from_slave(&term, (const uint8_t *)chunk3, sizeof(chunk3) - 1);
+    xassert(!term.kitty->chunk.active);
+
+    struct kitty_image *img =
+        kitty_image_store_find_id(&term.kitty->screens[0], 2);
+    xassert(img != NULL);
+    xassert(img->width == 2 && img->height == 2);
 
     kitty_fini(&term);
 }
