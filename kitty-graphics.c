@@ -501,11 +501,28 @@ kitty_parse_apc(const char *data, size_t len, struct kitty_command *cmd,
     return parse_control_data(ctrl, ctrl_len, cmd);
 }
 
+/* The id to name in a reply: the one the command gave, or 0. */
+static struct kitty_image_id
+reply_id(const struct kitty_command *cmd)
+{
+    return KITTY_IMAGE_ID(kitty_or(cmd->id, 0));
+}
+
+/* The id the command gives, or a new one. */
+static struct kitty_image_id
+command_image_id(
+    const struct kitty_command *cmd, struct kitty_image_store *store)
+{
+    return cmd->id.set
+        ? KITTY_IMAGE_ID(cmd->id.value)
+        : kitty_image_store_alloc_id(store);
+}
+
 static size_t
 kitty_format_reply(char *buf, size_t size, const struct kitty_command *cmd,
-                   uint32_t id, const char *msg)
+                   struct kitty_image_id id, const char *msg)
 {
-    size_t n = xsnprintf(buf, size, "\x1b_Gi=%u", id);
+    size_t n = xsnprintf(buf, size, "\x1b_Gi=%u", id.v);
     if (cmd->number.set)
         n += xsnprintf(buf + n, size - n, ",I=%u", cmd->number.value);
     if (cmd->placement_id.set)
@@ -516,7 +533,7 @@ kitty_format_reply(char *buf, size_t size, const struct kitty_command *cmd,
 
 static void
 kitty_reply(struct terminal *term, const struct kitty_command *cmd,
-            uint32_t id, bool ok, const char *msg)
+            struct kitty_image_id id, bool ok, const char *msg)
 {
     /* Without i or I, no reply is sent. */
     if (!cmd->id.set && !cmd->number.set)
@@ -563,8 +580,8 @@ kitty_load(
 /* Store a loaded image under 'id', place it for a=T, and reply. */
 static void
 kitty_store_and_reply(
-    struct terminal *term, const struct kitty_command *cmd, uint32_t id,
-    struct kitty_image *image)
+    struct terminal *term, const struct kitty_command *cmd,
+    struct kitty_image_id id, struct kitty_image *image)
 {
     struct kitty_image_store *store = kitty_image_store_for(term);
 
@@ -597,7 +614,7 @@ kitty_transmit(
     const char *payload, size_t payload_len)
 {
     struct kitty_image_store *store = kitty_image_store_for(term);
-    const uint32_t id = kitty_or(cmd->id, kitty_image_store_alloc_id(store));
+    const struct kitty_image_id id = command_image_id(cmd, store);
 
     struct kitty_image image;
     const char *error = NULL;
@@ -627,7 +644,7 @@ kitty_handle_transmit(struct terminal *term, const struct kitty_command *cmd,
     if (kitty->chunk.active) {
         if (!kitty_chunk_append(kitty, payload, payload_len)) {
             kitty_chunk_reset(kitty);
-            kitty_reply(term, cmd, kitty_or(cmd->id, 0), false,
+            kitty_reply(term, cmd, reply_id(cmd), false,
                         "EINVAL:image too large");
             return;
         }
@@ -637,8 +654,8 @@ kitty_handle_transmit(struct terminal *term, const struct kitty_command *cmd,
             return;
 
         const struct kitty_command first = kitty->chunk.cmd;
-        const uint32_t id = kitty_or(
-            first.id, kitty_image_store_alloc_id(kitty_image_store_for(term)));
+        const struct kitty_image_id id =
+            command_image_id(&first, kitty_image_store_for(term));
 
         struct kitty_image image;
         const char *error = NULL;
@@ -672,7 +689,7 @@ kitty_handle_transmit(struct terminal *term, const struct kitty_command *cmd,
         kitty->chunk.cmd = *cmd;
         if (!kitty_chunk_append(kitty, payload, payload_len)) {
             kitty_chunk_reset(kitty);
-            kitty_reply(term, cmd, kitty_or(cmd->id, 0), false,
+            kitty_reply(term, cmd, reply_id(cmd), false,
                         "EINVAL:image too large");
         }
         return;
@@ -688,9 +705,9 @@ kitty_handle_query(struct terminal *term, const struct kitty_command *cmd,
     struct kitty_image_store *store = kitty_image_store_for(term);
 
     /* An I-only query still names the id paw would have assigned. */
-    uint32_t id = 0;
+    struct kitty_image_id id = {0};
     if (cmd->id.set)
-        id = cmd->id.value;
+        id = KITTY_IMAGE_ID(cmd->id.value);
     else if (cmd->number.set)
         id = kitty_image_store_alloc_id(store);
 
@@ -713,13 +730,14 @@ kitty_handle_put(struct terminal *term, const struct kitty_command *cmd)
     struct kitty_image_store *store = kitty_image_store_for(term);
 
     struct kitty_image *image = NULL;
-    uint32_t id = 0;
+    struct kitty_image_id id = {0};
 
     if (cmd->id.set) {
-        id = cmd->id.value;
+        id = KITTY_IMAGE_ID(cmd->id.value);
         image = kitty_image_store_find_id(store, id);
     } else if (cmd->number.set) {
-        image = kitty_image_store_find_number(store, cmd->number.value);
+        image = kitty_image_store_find_number(
+            store, KITTY_IMAGE_NUMBER(cmd->number.value));
         if (image != NULL)
             id = image->id;
     }
@@ -747,7 +765,7 @@ kitty_handle_apc(struct terminal *term, const char *data, size_t len)
         /* A malformed command aborts any in-progress transfer. */
         kitty_chunk_reset(kitty);
         kitty_reply(
-            term, &cmd, kitty_or(cmd.id, 0), false,
+            term, &cmd, reply_id(&cmd), false,
             "EINVAL:invalid control data");
         return;
     }
@@ -756,7 +774,7 @@ kitty_handle_apc(struct terminal *term, const char *data, size_t len)
         /* A malformed command aborts any in-progress transfer. */
         kitty_chunk_reset(kitty);
         kitty_reply(
-            term, &cmd, cmd.id.value, false, "EINVAL:both i and I given");
+            term, &cmd, reply_id(&cmd), false, "EINVAL:both i and I given");
         return;
     }
 
@@ -771,7 +789,7 @@ kitty_handle_apc(struct terminal *term, const char *data, size_t len)
      */
     if (cmd.parent_id.set || cmd.parent_placement.set) {
         kitty_reply(
-            term, &cmd, kitty_or(cmd.id, 0), false,
+            term, &cmd, reply_id(&cmd), false,
             "EINVAL:relative placement not supported");
         return;
     }
@@ -802,7 +820,7 @@ kitty_handle_apc(struct terminal *term, const char *data, size_t len)
         /* Animation is not supported, and neither is an unknown action is
          * rejected. */
         kitty_reply(
-            term, &cmd, kitty_or(cmd.id, 0), false,
+            term, &cmd, reply_id(&cmd), false,
             "EINVAL:unsupported action");
         return;
     }
@@ -1071,7 +1089,7 @@ UNITTEST
 
     char buf[64];
     static const char expected[] = "\x1b_Gi=31;OK\x1b\\";
-    const size_t n = kitty_format_reply(buf, sizeof(buf), &cmd, 31, "OK");
+    const size_t n = kitty_format_reply(buf, sizeof(buf), &cmd, KITTY_IMAGE_ID(31), "OK");
     xassert(n == sizeof(expected) - 1);
     xassert(memcmp(buf, expected, n) == 0);
 }
@@ -1096,7 +1114,7 @@ UNITTEST
     xassert(!term.kitty->chunk.active);
 
     struct kitty_image *img =
-        kitty_image_store_find_id(&term.kitty->screens[0].image_store, 1);
+        kitty_image_store_find_id(&term.kitty->screens[0].image_store, KITTY_IMAGE_ID(1));
     xassert(img != NULL);
     xassert(img->width == 2 && img->height == 2);
     xassert(img->data[0] == 0xff000000u);
@@ -1124,7 +1142,7 @@ UNITTEST
     xassert(!term.kitty->chunk.active);
 
     /* The delete command also ran. */
-    xassert(kitty_image_store_find_id(&term.kitty->screens[0].image_store, 9) == NULL);
+    xassert(kitty_image_store_find_id(&term.kitty->screens[0].image_store, KITTY_IMAGE_ID(9)) == NULL);
 
     /* The partial data is discarded. */
     xassert(tll_length(term.kitty->screens[0].image_store.images) == 0);
@@ -1133,7 +1151,7 @@ UNITTEST
     static const char done[] =
         "\x1b_Ga=t,i=8,f=24,s=1,v=1;AAAA\x1b\\";
     vt_from_slave(&term, (const uint8_t *)done, sizeof(done) - 1);
-    xassert(kitty_image_store_find_id(&term.kitty->screens[0].image_store, 8) != NULL);
+    xassert(kitty_image_store_find_id(&term.kitty->screens[0].image_store, KITTY_IMAGE_ID(8)) != NULL);
 
     kitty_fini(&term);
 }
@@ -1181,7 +1199,7 @@ UNITTEST
     xassert(!term.kitty->chunk.active);
 
     struct kitty_image *img =
-        kitty_image_store_find_id(&term.kitty->screens[0].image_store, 1);
+        kitty_image_store_find_id(&term.kitty->screens[0].image_store, KITTY_IMAGE_ID(1));
     xassert(img != NULL);
     xassert(img->width == 2 && img->height == 2);
     xassert(img->data[0] == 0xff000000u);
@@ -1227,7 +1245,7 @@ UNITTEST
     xassert(!term.kitty->chunk.active);
 
     struct kitty_image *img =
-        kitty_image_store_find_id(&term.kitty->screens[0].image_store, 2);
+        kitty_image_store_find_id(&term.kitty->screens[0].image_store, KITTY_IMAGE_ID(2));
     xassert(img != NULL);
     xassert(img->width == 2 && img->height == 2);
 
@@ -1253,23 +1271,23 @@ UNITTEST
     vt_from_slave(&term, (const uint8_t *)img, sizeof(img) - 1);
     vt_from_slave(&term, (const uint8_t *)img2, sizeof(img2) - 1);
     xassert(kitty_image_store_find_id(
-                &term.kitty->screens[0].image_store, 1) != NULL);
+                &term.kitty->screens[0].image_store, KITTY_IMAGE_ID(1)) != NULL);
     xassert(kitty_image_store_find_id(
-                &term.kitty->screens[0].image_store, 2) != NULL);
+                &term.kitty->screens[0].image_store, KITTY_IMAGE_ID(2)) != NULL);
 
     /* Image 1 on the alternate screen too (same id, separate store). */
     term.grid = &term.alt;
     vt_from_slave(&term, (const uint8_t *)img, sizeof(img) - 1);
     xassert(kitty_image_store_find_id(
-                &term.kitty->screens[1].image_store, 1) != NULL);
+                &term.kitty->screens[1].image_store, KITTY_IMAGE_ID(1)) != NULL);
 
     kitty_alt_screen_clear(&term);
 
     xassert(tll_length(term.kitty->screens[1].image_store.images) == 0);
     xassert(kitty_image_store_find_id(
-                &term.kitty->screens[0].image_store, 1) != NULL);
+                &term.kitty->screens[0].image_store, KITTY_IMAGE_ID(1)) != NULL);
     xassert(kitty_image_store_find_id(
-                &term.kitty->screens[0].image_store, 2) != NULL);
+                &term.kitty->screens[0].image_store, KITTY_IMAGE_ID(2)) != NULL);
 
     kitty_fini(&term);
 }
@@ -1347,7 +1365,7 @@ UNITTEST
         "\x1b_Ga=t,i=1,f=24,s=1,v=1;AAAA\x1b\\";
     vt_from_slave(&term, (const uint8_t *)img, sizeof(img) - 1);
     xassert(kitty_image_store_find_id(
-                &term.kitty->screens[1].image_store, 1) != NULL);
+                &term.kitty->screens[1].image_store, KITTY_IMAGE_ID(1)) != NULL);
 
     term_reset(&term, false);
 

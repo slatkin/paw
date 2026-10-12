@@ -17,7 +17,7 @@ enum { KITTY_IMAGE_QUOTA = 320u * 1024 * 1024 };
  * ready for direct compositing.
  */
 struct kitty_image {
-    uint32_t id;
+    struct kitty_image_id id;
     struct kitty_u32 number;
 
     int width, height;    /* Pixels */
@@ -31,7 +31,8 @@ struct kitty_image {
 };
 
 /* Called when an image is removed from a store (replaced or evicted). */
-typedef void (*kitty_image_removed_cb)(void *user, uint32_t image_id);
+typedef void (*kitty_image_removed_cb)(
+    void *user, struct kitty_image_id image_id);
 
 struct kitty_image_store {
     /* Ordered by age: oldest first. */
@@ -64,19 +65,21 @@ void kitty_image_store_fini(struct kitty_image_store *store);
 struct kitty_image_store *kitty_image_store_for(struct terminal *term);
 
 struct kitty_image *kitty_image_store_find_id(
-    struct kitty_image_store *store, uint32_t id);
+    struct kitty_image_store *store, struct kitty_image_id id);
 struct kitty_image *kitty_image_store_find_number(
-    struct kitty_image_store *store, uint32_t number);
+    struct kitty_image_store *store, struct kitty_image_number number);
 
 /* Allocate an id that is not in use. */
-uint32_t kitty_image_store_alloc_id(struct kitty_image_store *store);
+struct kitty_image_id kitty_image_store_alloc_id(
+    struct kitty_image_store *store);
 
 /*
  * Remove the image with the given id, if present. Calls the on_remove
  * callback first, so placements that refer to it are dropped. Returns
  * false when no such image exists.
  */
-bool kitty_image_store_delete_id(struct kitty_image_store *store, uint32_t id);
+bool kitty_image_store_delete_id(
+    struct kitty_image_store *store, struct kitty_image_id id);
 
 /* Remove every image that has no placement left. */
 void kitty_image_store_delete_unreferenced(struct kitty_image_store *store);

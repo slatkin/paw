@@ -41,8 +41,8 @@ enum {
 };
 
 struct kitty_placement {
-    uint32_t image_id;
-    uint32_t placement_id;
+    struct kitty_image_id image_id;
+    struct kitty_placement_id placement_id;
 
     /* Absolute ring-buffer row and column of the anchor cell. */
     int row;
@@ -103,7 +103,8 @@ void kitty_placement_store_init(struct kitty_placement_store *store);
 void kitty_placement_store_fini(struct kitty_placement_store *store);
 
 /* Image store callback: drop placements that refer to 'image_id'. */
-void kitty_placement_on_image_removed(void *user, uint32_t image_id);
+void kitty_placement_on_image_removed(
+    void *user, struct kitty_image_id image_id);
 
 /*
  * Create (or replace) a placement for 'image'. The image must already

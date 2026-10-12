@@ -150,10 +150,10 @@ placement_cmp(const void *_a, const void *_b)
 
     if (a->z != b->z)
         return a->z < b->z ? -1 : 1;
-    if (a->image_id != b->image_id)
-        return a->image_id < b->image_id ? -1 : 1;
-    if (a->placement_id != b->placement_id)
-        return a->placement_id < b->placement_id ? -1 : 1;
+    if (a->image_id.v != b->image_id.v)
+        return a->image_id.v < b->image_id.v ? -1 : 1;
+    if (a->placement_id.v != b->placement_id.v)
+        return a->placement_id.v < b->placement_id.v ? -1 : 1;
     return 0;
 }
 
@@ -566,15 +566,15 @@ placeholder_decode(
  * non-zero). A placement id of 0 means "any" (kitty). */
 static struct kitty_placement *
 placeholder_find_virtual(
-    struct kitty_placement_store *store, uint32_t image_id,
-    uint32_t placement_id)
+    struct kitty_placement_store *store, struct kitty_image_id image_id,
+    struct kitty_placement_id placement_id)
 {
     tll_foreach(store->placements, it) {
         struct kitty_placement *p = &it->item;
 
-        if (!p->virtual_placement || p->image_id != image_id)
+        if (!p->virtual_placement || p->image_id.v != image_id.v)
             continue;
-        if (placement_id != 0 && p->placement_id != placement_id)
+        if (placement_id.v != 0 && p->placement_id.v != placement_id.v)
             continue;
 
         return p;
@@ -614,7 +614,7 @@ kitty_render_placeholder(
 
     struct kitty_placement_store *store = kitty_placement_store_for(term);
     struct kitty_placement *p = placeholder_find_virtual(
-        store, id, placement_id);
+        store, KITTY_IMAGE_ID(id), KITTY_PLACEMENT_ID(placement_id));
     if (p == NULL || p->cache_pix == NULL)
         return true;
 
@@ -891,7 +891,7 @@ UNITTEST
         PIXMAN_a8r8g8b8, 4, 4, src, 16);
 
     struct kitty_image proto = {
-        .id = 42,
+        .id = KITTY_IMAGE_ID(42),
         .width = 4,
         .height = 4,
         .data = src,
@@ -911,7 +911,7 @@ UNITTEST
     xassert(kitty_placement_put(
                 &term, &put,
                 kitty_image_store_find_id(
-                    kitty_image_store_for(&term), 42)) == NULL);
+                    kitty_image_store_for(&term), KITTY_IMAGE_ID(42))) == NULL);
 
     kitty_render_prepass(&term);
 
@@ -976,7 +976,7 @@ UNITTEST
     for (int i = 0; i < 16; i++)
         src[i] = 0xffff0000u;
     struct kitty_image proto = {
-        .id = 42, .width = 4, .height = 4,
+        .id = KITTY_IMAGE_ID(42), .width = 4, .height = 4,
         .data = src, .size = 16 * sizeof(src[0]),
         .pix = pixman_image_create_bits(PIXMAN_a8r8g8b8, 4, 4, src, 16),
     };
@@ -989,7 +989,7 @@ UNITTEST
     xassert(kitty_placement_put(
                 &term, &put,
                 kitty_image_store_find_id(
-                    kitty_image_store_for(&term), 42)) == NULL);
+                    kitty_image_store_for(&term), KITTY_IMAGE_ID(42))) == NULL);
 
     const struct kitty_placement *p =
         &tll_front(kitty_placement_store_for(&term)->placements);

@@ -92,12 +92,12 @@ kitty_placement_visible_top(
 }
 
 void
-kitty_placement_on_image_removed(void *user, uint32_t image_id)
+kitty_placement_on_image_removed(void *user, struct kitty_image_id image_id)
 {
     struct kitty_placement_store *store = user;
 
     tll_foreach(store->placements, it) {
-        if (it->item.image_id != image_id)
+        if (it->item.image_id.v != image_id.v)
             continue;
 
         kitty_placement_cache_free(store, &it->item);
@@ -396,8 +396,8 @@ kitty_placement_put(
     if (rows > term->grid->num_rows)
         rows = term->grid->num_rows;
 
-    const uint32_t placement_id =
-        kitty_or(cmd->placement_id, 0);
+    const struct kitty_placement_id placement_id =
+        KITTY_PLACEMENT_ID(kitty_or(cmd->placement_id, 0));
     const bool virtual_placement =
         cmd->unicode_placeholder.set && cmd->unicode_placeholder.value != 0;
 
@@ -426,9 +426,9 @@ kitty_placement_put(
     /* Replace an existing placement with the same (image id, placement
      * id) pair. A placement id of 0 never replaces. */
     tll_foreach(store->placements, it) {
-        if (p.placement_id == 0 ||
-            it->item.image_id != p.image_id ||
-            it->item.placement_id != p.placement_id)
+        if (p.placement_id.v == 0 ||
+            it->item.image_id.v != p.image_id.v ||
+            it->item.placement_id.v != p.placement_id.v)
         {
             continue;
         }
@@ -558,25 +558,25 @@ delete_matches(
 
     case 'i':
     case 'I':
-        if (!cmd->id.set || p->image_id != cmd->id.value)
+        if (!cmd->id.set || p->image_id.v != cmd->id.value)
             return false;
         return !cmd->placement_id.set ||
-            p->placement_id == cmd->placement_id.value;
+            p->placement_id.v == cmd->placement_id.value;
 
     case 'n':
     case 'N':
         /* Only the newest image with this number. */
-        if (number_image == NULL || p->image_id != number_image->id)
+        if (number_image == NULL || p->image_id.v != number_image->id.v)
             return false;
         return !cmd->placement_id.set ||
-            p->placement_id == cmd->placement_id.value;
+            p->placement_id.v == cmd->placement_id.value;
 
     case 'r':
     case 'R':
         if (!cmd->x.set || !cmd->y.set)
             return false;
-        return (int64_t)cmd->x.value <= (int64_t)p->image_id &&
-            (int64_t)p->image_id <= (int64_t)cmd->y.value;
+        return (int64_t)cmd->x.value <= (int64_t)p->image_id.v &&
+            (int64_t)p->image_id.v <= (int64_t)cmd->y.value;
 
     case 'c':
     case 'C': {
@@ -643,7 +643,8 @@ delete_matches(
 }
 
 static void
-delete_image_if_unused(struct kitty_image_store *images, uint32_t id)
+delete_image_if_unused(
+    struct kitty_image_store *images, struct kitty_image_id id)
 {
     struct kitty_image *image = kitty_image_store_find_id(images, id);
     if (image != NULL && image->placements == 0)
@@ -669,10 +670,11 @@ kitty_placement_delete(struct terminal *term, const struct kitty_command *cmd)
      */
     struct kitty_image *number_image =
         (sel == 'n' || sel == 'N') && cmd->number.set
-        ? kitty_image_store_find_number(images, cmd->number.value)
+        ? kitty_image_store_find_number(
+            images, KITTY_IMAGE_NUMBER(cmd->number.value))
         : NULL;
 
-    tll(uint32_t) touched = tll_init();
+    tll(struct kitty_image_id) touched = tll_init();
 
     tll_foreach(store->placements, it) {
         struct kitty_placement *p = &it->item;
@@ -695,7 +697,7 @@ kitty_placement_delete(struct terminal *term, const struct kitty_command *cmd)
             switch (sel) {
             case 'I':
                 if (cmd->id.set)
-                    delete_image_if_unused(images, cmd->id.value);
+                    delete_image_if_unused(images, KITTY_IMAGE_ID(cmd->id.value));
                 break;
 
             case 'N':
@@ -705,11 +707,11 @@ kitty_placement_delete(struct terminal *term, const struct kitty_command *cmd)
 
             case 'R':
                 if (cmd->x.set && cmd->y.set) {
-                    tll(uint32_t) range = tll_init();
+                    tll(struct kitty_image_id) range = tll_init();
                     tll_foreach(images->images, img_it) {
-                        const uint32_t id = img_it->item.id;
-                        if ((int64_t)cmd->x.value <= (int64_t)id &&
-                            (int64_t)id <= (int64_t)cmd->y.value)
+                        const struct kitty_image_id id = img_it->item.id;
+                        if ((int64_t)cmd->x.value <= (int64_t)id.v &&
+                            (int64_t)id.v <= (int64_t)cmd->y.value)
                         {
                             tll_push_back(range, id);
                         }
@@ -981,7 +983,7 @@ kitty_scroll_down(struct terminal *term, struct scroll_region region, int rows)
         for (size_t _i = 0; _i < npix; _i++)                            \
             px[_i] = 0xff000000u;                                       \
         struct kitty_image proto = {                                    \
-            .id = (img_id), .width = (pw), .height = (ph),              \
+            .id = KITTY_IMAGE_ID(img_id), .width = (pw), .height = (ph),              \
             .data = px, .size = npix * sizeof(px[0]),                   \
         };                                                              \
         xassert(kitty_image_store_add(                                  \
@@ -999,7 +1001,7 @@ kitty_scroll_down(struct terminal *term, struct scroll_region region, int rows)
                     &(t), &pc,                                          \
                     kitty_image_store_find_id(                          \
                         kitty_image_store_for(&(t)),                    \
-                        (img_id))) == NULL);                            \
+                        KITTY_IMAGE_ID(img_id))) == NULL);              \
     } while (0)
 
 #define SCROLL_COUNT(t) \
@@ -1010,7 +1012,7 @@ static inline struct kitty_placement *
 scroll_test_find(struct terminal *t, uint32_t id)
 {
     tll_foreach(kitty_placement_store_for(t)->placements, it) {
-        if (it->item.image_id == id)
+        if (it->item.image_id.v == id)
             return &it->item;
     }
     return NULL;
@@ -1336,7 +1338,7 @@ UNITTEST
     for (int i = 0; i < 4; i++)
         px[i] = 0xff000000u;
     struct kitty_image proto = {
-        .id = 9, .width = 1, .height = 4,
+        .id = KITTY_IMAGE_ID(9), .width = 1, .height = 4,
         .data = px, .size = 4 * sizeof(px[0]),
     };
     xassert(kitty_image_store_add(kitty_image_store_for(&term), &proto));
@@ -1351,7 +1353,7 @@ UNITTEST
     /* C=0: the cursor move runs, and scrolls at the region bottom. */
     xassert(kitty_placement_put(
                 &term, &pc,
-                kitty_image_store_find_id(kitty_image_store_for(&term), 9))
+                kitty_image_store_find_id(kitty_image_store_for(&term), KITTY_IMAGE_ID(9)))
             == NULL);
 
     xassert(term.grid->cursor.point.row == 3);
@@ -1386,7 +1388,7 @@ UNITTEST
     SCROLL_PLACE(term, 10, 1, 1, 1, 1, 1); /* visible at screen row 1 */
 
     xassert(SCROLL_COUNT(term) == 2);
-    xassert(kitty_image_store_find_id(kitty_image_store_for(&term), 10) != NULL);
+    xassert(kitty_image_store_find_id(kitty_image_store_for(&term), KITTY_IMAGE_ID(10)) != NULL);
 
     kitty_clear_visible(&term);
 
@@ -1394,8 +1396,8 @@ UNITTEST
     xassert(scroll_test_find(&term, 9) != NULL);
     xassert(scroll_test_find(&term, 10) == NULL);
 
-    xassert(kitty_image_store_find_id(kitty_image_store_for(&term), 9) != NULL);
-    xassert(kitty_image_store_find_id(kitty_image_store_for(&term), 10) == NULL);
+    xassert(kitty_image_store_find_id(kitty_image_store_for(&term), KITTY_IMAGE_ID(9)) != NULL);
+    xassert(kitty_image_store_find_id(kitty_image_store_for(&term), KITTY_IMAGE_ID(10)) == NULL);
 
     kitty_fini(&term);
     free(term.normal.rows);
@@ -1422,8 +1424,8 @@ UNITTEST
     xassert(SCROLL_COUNT(term) == 1);
     xassert(scroll_test_find(&term, 9) == NULL);
     xassert(scroll_test_find(&term, 10) != NULL);
-    xassert(kitty_image_store_find_id(kitty_image_store_for(&term), 9) == NULL);
-    xassert(kitty_image_store_find_id(kitty_image_store_for(&term), 10) != NULL);
+    xassert(kitty_image_store_find_id(kitty_image_store_for(&term), KITTY_IMAGE_ID(9)) == NULL);
+    xassert(kitty_image_store_find_id(kitty_image_store_for(&term), KITTY_IMAGE_ID(10)) != NULL);
 
     kitty_fini(&term);
     free(term.normal.rows);
@@ -1508,7 +1510,7 @@ UNITTEST
     for (int i = 0; i < 4; i++)
         px[i] = 0xff000000u;
     struct kitty_image proto = {
-        .id = 7, .width = 2, .height = 2,
+        .id = KITTY_IMAGE_ID(7), .width = 2, .height = 2,
         .data = px, .size = 4 * sizeof(px[0]),
     };
     xassert(kitty_image_store_add(kitty_image_store_for(&term), &proto));
@@ -1527,7 +1529,7 @@ UNITTEST
     xassert(kitty_placement_put(
                 &term, &put,
                 kitty_image_store_find_id(
-                    kitty_image_store_for(&term), 7)) == NULL);
+                    kitty_image_store_for(&term), KITTY_IMAGE_ID(7))) == NULL);
 
     struct kitty_placement *p = scroll_test_find(&term, 7);
     xassert(p != NULL);
@@ -1574,7 +1576,7 @@ UNITTEST
     uint32_t *px = xcalloc(1, sizeof(px[0]));
     px[0] = 0xff000000u;
     struct kitty_image proto = {
-        .id = 7, .width = 1, .height = 1, .number = kitty_some_u32(5),
+        .id = KITTY_IMAGE_ID(7), .width = 1, .height = 1, .number = kitty_some_u32(5),
         .data = px, .size = sizeof(px[0]),
     };
     xassert(kitty_image_store_add(kitty_image_store_for(&term), &proto));
@@ -1597,7 +1599,7 @@ UNITTEST
         xassert(kitty_placement_put(
                     &term, &put,
                     kitty_image_store_find_id(
-                        kitty_image_store_for(&term), 7)) == NULL);
+                        kitty_image_store_for(&term), KITTY_IMAGE_ID(7))) == NULL);
 
         kitty_command_init(&del);
         del.action = KITTY_ACTION_DELETE;
@@ -1625,7 +1627,7 @@ UNITTEST
     xassert(kitty_placement_put(
                 &term, &put,
                 kitty_image_store_find_id(
-                    kitty_image_store_for(&term), 7)) == NULL);
+                    kitty_image_store_for(&term), KITTY_IMAGE_ID(7))) == NULL);
 
     kitty_command_init(&del);
     del.action = KITTY_ACTION_DELETE;
@@ -1649,7 +1651,7 @@ UNITTEST
 
     SCROLL_PLACE(term, 9, 0, 1, 1, 1, 1);
     struct kitty_image *image =
-        kitty_image_store_find_id(kitty_image_store_for(&term), 9);
+        kitty_image_store_find_id(kitty_image_store_for(&term), KITTY_IMAGE_ID(9));
 
     struct kitty_command put;
     kitty_command_init(&put);

@@ -115,34 +115,36 @@ kitty_image_store_fini(struct kitty_image_store *store)
 }
 
 struct kitty_image *
-kitty_image_store_find_id(struct kitty_image_store *store, uint32_t id)
+kitty_image_store_find_id(
+    struct kitty_image_store *store, struct kitty_image_id id)
 {
     tll_foreach(store->images, it) {
-        if (it->item.id == id)
+        if (it->item.id.v == id.v)
             return &it->item;
     }
     return NULL;
 }
 
 struct kitty_image *
-kitty_image_store_find_number(struct kitty_image_store *store, uint32_t number)
+kitty_image_store_find_number(
+    struct kitty_image_store *store, struct kitty_image_number number)
 {
     /* The newest image with this number wins. */
     tll_rforeach(store->images, it) {
-        if (it->item.number.set && it->item.number.value == number)
+        if (it->item.number.set && it->item.number.value == number.v)
             return &it->item;
     }
     return NULL;
 }
 
-uint32_t
+struct kitty_image_id
 kitty_image_store_alloc_id(struct kitty_image_store *store)
 {
     for (;;) {
-        const uint32_t id = store->next_id++;
+        const struct kitty_image_id id = KITTY_IMAGE_ID(store->next_id++);
         if (store->next_id == 0)
             store->next_id = 1;
-        if (id != 0 && kitty_image_store_find_id(store, id) == NULL)
+        if (id.v != 0 && kitty_image_store_find_id(store, id) == NULL)
             return id;
     }
 }
@@ -162,10 +164,11 @@ kitty_image_store_alloc_id(struct kitty_image_store *store)
     } while (0)
 
 bool
-kitty_image_store_delete_id(struct kitty_image_store *store, uint32_t id)
+kitty_image_store_delete_id(
+    struct kitty_image_store *store, struct kitty_image_id id)
 {
     tll_foreach(store->images, it) {
-        if (it->item.id != id)
+        if (it->item.id.v != id.v)
             continue;
 
         image_remove(store, it);
@@ -221,7 +224,7 @@ kitty_image_store_add(
 
     /* An image with the same id is replaced. */
     tll_foreach(store->images, it) {
-        if (it->item.id != image->id)
+        if (it->item.id.v != image->id.v)
             continue;
 
         /* Placements of the replaced image must not outlive it. */
@@ -593,7 +596,7 @@ UNITTEST
     xassert(kitty_image_decode(
                 &cmd, payload, sizeof(payload) - 1,
                 KITTY_IMAGE_QUOTA, &img, &error));
-    img.id = 5;
+    img.id = KITTY_IMAGE_ID(5);
     kitty_image_store_add(&store, &img);
     xassert(tll_length(store.images) == 1);
     xassert(store.bytes == img.size);
@@ -601,11 +604,11 @@ UNITTEST
     xassert(kitty_image_decode(
                 &cmd, payload, sizeof(payload) - 1,
                 KITTY_IMAGE_QUOTA, &img, &error));
-    img.id = 5;
+    img.id = KITTY_IMAGE_ID(5);
     kitty_image_store_add(&store, &img);
     xassert(tll_length(store.images) == 1);
     xassert(store.bytes == img.size);
-    xassert(kitty_image_store_find_id(&store, 5) != NULL);
+    xassert(kitty_image_store_find_id(&store, KITTY_IMAGE_ID(5)) != NULL);
 
     kitty_image_store_fini(&store);
     xassert(store.bytes == 0);
@@ -637,7 +640,7 @@ UNITTEST
     }
 
     xassert(tll_length(store.images) == 2);
-    struct kitty_image *newest = kitty_image_store_find_number(&store, 13);
+    struct kitty_image *newest = kitty_image_store_find_number(&store, KITTY_IMAGE_NUMBER(13));
     xassert(newest != NULL);
     xassert(newest == &tll_back(store.images));
 
@@ -737,16 +740,16 @@ UNITTEST
 
     for (uint32_t i = 1; i <= 4; i++) {
         struct kitty_image img = {0};
-        img.id = i;
+        img.id = KITTY_IMAGE_ID(i);
         img.size = 100;
         xassert(kitty_image_store_add(&store, &img));
     }
 
     xassert(store.bytes == 300);
-    xassert(kitty_image_store_find_id(&store, 1) == NULL);
-    xassert(kitty_image_store_find_id(&store, 2) != NULL);
-    xassert(kitty_image_store_find_id(&store, 3) != NULL);
-    xassert(kitty_image_store_find_id(&store, 4) != NULL);
+    xassert(kitty_image_store_find_id(&store, KITTY_IMAGE_ID(1)) == NULL);
+    xassert(kitty_image_store_find_id(&store, KITTY_IMAGE_ID(2)) != NULL);
+    xassert(kitty_image_store_find_id(&store, KITTY_IMAGE_ID(3)) != NULL);
+    xassert(kitty_image_store_find_id(&store, KITTY_IMAGE_ID(4)) != NULL);
 
     kitty_image_store_fini(&store);
 }
@@ -762,25 +765,25 @@ UNITTEST
     store.quota = 200;
 
     struct kitty_image a = {0};
-    a.id = 1;
+    a.id = KITTY_IMAGE_ID(1);
     a.size = 100;
     a.placements = 1;
     xassert(kitty_image_store_add(&store, &a));
 
     struct kitty_image b = {0};
-    b.id = 2;
+    b.id = KITTY_IMAGE_ID(2);
     b.size = 100;
     xassert(kitty_image_store_add(&store, &b));
 
     struct kitty_image c = {0};
-    c.id = 3;
+    c.id = KITTY_IMAGE_ID(3);
     c.size = 100;
     xassert(kitty_image_store_add(&store, &c));
 
     xassert(store.bytes == 200);
-    xassert(kitty_image_store_find_id(&store, 1) != NULL);
-    xassert(kitty_image_store_find_id(&store, 2) == NULL);
-    xassert(kitty_image_store_find_id(&store, 3) != NULL);
+    xassert(kitty_image_store_find_id(&store, KITTY_IMAGE_ID(1)) != NULL);
+    xassert(kitty_image_store_find_id(&store, KITTY_IMAGE_ID(2)) == NULL);
+    xassert(kitty_image_store_find_id(&store, KITTY_IMAGE_ID(3)) != NULL);
 
     kitty_image_store_fini(&store);
 }
@@ -793,18 +796,18 @@ UNITTEST
     store.quota = 200;
 
     struct kitty_image a = {0};
-    a.id = 1;
+    a.id = KITTY_IMAGE_ID(1);
     a.size = 100;
     xassert(kitty_image_store_add(&store, &a));
 
     struct kitty_image big = {0};
-    big.id = 2;
+    big.id = KITTY_IMAGE_ID(2);
     big.size = 201;
     xassert(!kitty_image_store_add(&store, &big));
 
     xassert(store.bytes == 100);
-    xassert(kitty_image_store_find_id(&store, 1) != NULL);
-    xassert(kitty_image_store_find_id(&store, 2) == NULL);
+    xassert(kitty_image_store_find_id(&store, KITTY_IMAGE_ID(1)) != NULL);
+    xassert(kitty_image_store_find_id(&store, KITTY_IMAGE_ID(2)) == NULL);
 
     /* The decode path rejects an over-quota image before allocating. */
     struct kitty_image img;

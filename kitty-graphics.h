@@ -70,6 +70,15 @@ kitty_some_i32(int32_t value)
 /* The value of an optional field, or 'fallback' when it is absent. */
 #define kitty_or(opt, fallback) ((opt).set ? (opt).value : (fallback))
 
+/* Distinct types, so that the three kinds of number cannot be mixed up. */
+struct kitty_image_id { uint32_t v; };
+struct kitty_image_number { uint32_t v; };
+struct kitty_placement_id { uint32_t v; };
+
+#define KITTY_IMAGE_ID(n) ((struct kitty_image_id){.v = (n)})
+#define KITTY_IMAGE_NUMBER(n) ((struct kitty_image_number){.v = (n)})
+#define KITTY_PLACEMENT_ID(n) ((struct kitty_placement_id){.v = (n)})
+
 /* One parsed graphics command. Field names follow the protocol keys. */
 struct kitty_command {
     enum kitty_action action;
