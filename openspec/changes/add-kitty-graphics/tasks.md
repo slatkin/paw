@@ -16,8 +16,8 @@ Test convention: foot runs `UNITTEST { ... }` blocks as constructors in debug bu
 
 ## 3. Image store and decoding
 
-- [ ] 3.1 Implement `kitty-image.c`: per-screen store, ids, `I=` numbers, replacement of an id, RGB/RGBA conversion to premultiplied pixman `a8r8g8b8`, and the data-length check (design D3). Verify: unit checks for an RGB image, an RGBA image, a wrong length, and re-transmission of an id.
-- [ ] 3.2 Add PNG decoding through the libpng simplified API, and `o=z` inflate with an output cap. Check the size before allocation. Verify: unit checks with an embedded 2x2 PNG, an embedded zlib stream, a truncated PNG, and a PNG header that claims 100000x100000 (it must fail without a large allocation).
+- [x] 3.1 Implement `kitty-image.c`: per-screen store, ids, `I=` numbers, replacement of an id, RGB/RGBA conversion to premultiplied pixman `a8r8g8b8`, and the data-length check (design D3). Verify: unit checks for an RGB image, an RGBA image, a wrong length, and re-transmission of an id.
+- [x] 3.2 Add PNG decoding through the libpng simplified API, and `o=z` inflate with an output cap. Check the size before allocation. Verify: unit checks with an embedded 2x2 PNG, an embedded zlib stream, a truncated PNG, and a PNG header that claims 100000x100000 (it must fail without a large allocation).
 - [ ] 3.3 Add chunked transfer (`m=1` ... `m=0`), and cancel it on `a=d`. Verify: unit check with three chunks. Live check: `kitten icat --transfer-mode=stream <large.png>` returns without an error.
 - [ ] 3.4 Add the 320 MB per-screen quota and the eviction order (spec: Storage quota). Verify: unit check with a lowered quota constant (a test-only parameter) that shows the eviction order and the too-large failure.
 - [ ] 3.5 Reject `a=f`, `a=a`, `a=c`, `P`, and `Q` with an error reply. Verify: `scripts/kitty-gfx-check.py 'a=f,i=1;AAAA'` prints an error reply.
