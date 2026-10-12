@@ -24,10 +24,6 @@ asan:
     ninja -C bld/asan
     meson test -C bld/asan --print-errorlogs
 
-# Run the test suite under valgrind (needs valgrind installed).
-memcheck: build
-    meson test -C bld --print-errorlogs --wrapper='valgrind --error-exitcode=1 --leak-check=full'
-
 # Run clang-tidy on the named files, or on changed C files when none are named.
 tidy *files: build
     #!/usr/bin/env bash

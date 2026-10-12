@@ -13,7 +13,7 @@ This file provides guidance to AI coding agents when working with code in this r
 
 Install the dependencies listed in INSTALL.md. Install `tllist` 1.1.0 or later as a system package. If pkg-config cannot find it, meson clones it from codeberg.org (see `subprojects/tllist.wrap`). If `subprojects/tllist` exists but is empty, meson stops with `Subproject exists but has no meson.build file`. The system package avoids this, because meson uses it first.
 
-Run `just check` for the usual checks. It configures and builds `bld/`, runs the tests, builds and tests with sanitizers in `bld/asan/`, runs clang-tidy on changed C files, and runs codespell. Run `just` to list the other recipes. `just memcheck` needs valgrind.
+Run `just check` for the usual checks. It configures and builds `bld/`, runs the tests, builds and tests with sanitizers in `bld/asan/`, runs clang-tidy on changed C files, and runs codespell. Run `just` to list the other recipes. Do not use valgrind on the CachyOS host used here. It fails at startup, because its glibc has no debug symbols that valgrind can read. Use the `asan` recipe for memory errors and leaks.
 
 Build in `bld/`. This directory is git-ignored:
 
