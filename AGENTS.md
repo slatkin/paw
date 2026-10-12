@@ -6,16 +6,14 @@ This file provides guidance to AI coding agents when working with code in this r
 
 - The repository is a fork of foot, a terminal emulator for Wayland. The code uses C11 and the meson build system.
 - Git remotes: `origin` is the fork (github.com/slatkin/paw). `upstream` is foot (codeberg.org/dnkl/foot).
-- Master builds `paw` and `pawclient`. Commit `d390d73f` renamed the binaries. The config path, server socket, and XTVERSION reply still use foot names. The rest of the rename is planned in `openspec/changes/rebrand-paw/`. Run `git log` and `git status` before you assume a name.
+- Master builds `paw` and `pawclient`. Commit `d390d73f` renamed the binaries. Later commits moved the config path, server socket, and XTVERSION reply to paw names. The rebrand change is archived in `openspec/changes/archive/2026-10-12-rebrand-paw/`. Run `git log` and `git status` before you assume a name.
 - Master has fork commits on top of `upstream/master`, for example `d390d73f`.
 
 ## Build and test
 
 Install the dependencies listed in INSTALL.md. Install `tllist` 1.1.0 or later as a system package. If pkg-config cannot find it, meson clones it from codeberg.org (see `subprojects/tllist.wrap`). If `subprojects/tllist` exists but is empty, meson stops with `Subproject exists but has no meson.build file`. The system package avoids this, because meson uses it first.
 
-Run `just check` for the usual checks. It configures and builds `bld/`, runs the tests, builds and tests with sanitizers in `bld/asan/`, runs clang-tidy on changed C files, and runs codespell. Run `just` to list the other recipes. Do not use valgrind on the CachyOS host used here. It fails at startup, because its glibc has no debug symbols that valgrind can read. Use the `asan` recipe for memory errors and leaks.
-
-`make` wraps the same recipes. `make dev` builds the debug tree in `bld/`, and `make release` builds the release tree in `bld/release/`. Run `make help` to list the targets.
+Run `just check` for the usual checks. It configures and builds `bld/`, runs the tests, builds and tests with sanitizers in `bld/asan/`, runs clang-tidy on changed C files, and runs codespell. Run `just` to list the other recipes. `just release` builds the release tree in `bld/release/`. Do not use valgrind on the CachyOS host used here. It fails at startup, because its glibc has no debug symbols that valgrind can read. Use the `asan` recipe for memory errors and leaks.
 
 Build in `bld/`. This directory is git-ignored:
 
@@ -92,7 +90,7 @@ Constraints that are not obvious:
 
 ## Fork rules
 
-These rules come from `openspec/changes/rebrand-paw/design.md`:
+These rules come from `openspec/changes/archive/2026-10-12-rebrand-paw/design.md`:
 
 - Keep edits to upstream files small. Each upstream merge can conflict with fork edits. Prefer files that upstream rarely changes.
 - Keep internal names. The rebrand does not rename `LOG_MODULE` strings, `FOOT_*` macros, or source file names.
@@ -102,9 +100,9 @@ These rules come from `openspec/changes/rebrand-paw/design.md`:
 ## OpenSpec
 
 - Changes live in `openspec/changes/<name>/`: `proposal.md`, `design.md`, `tasks.md`, and `specs/<capability>/spec.md`. The config is `openspec/config.yaml` (schema `spec-driven`).
-- Archived changes go to `openspec/changes/archive/`. Final specs go to `openspec/specs/`. Both folders are empty.
+- Archived changes go to `openspec/changes/archive/`, for example `2026-10-12-rebrand-paw`. Final specs go to `openspec/specs/`, for example `program-identity`.
 - Slash commands are in `.claude/commands/opsx/`, for example `/opsx:propose`, `/opsx:apply`, and `/opsx:archive`. The same prompts for pi are in `.pi/prompts/opsx-*.md`.
-- At the time of writing, `openspec/`, `.claude/`, and `.pi/` are not committed.
+- `openspec/`, `.claude/`, and `.pi/` are committed.
 
 ## Conventions
 
