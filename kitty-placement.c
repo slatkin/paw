@@ -105,7 +105,15 @@ kitty_placement_on_image_removed(void *user, uint32_t image_id)
     }
 }
 
-void
+/* ceil(num / den), clamped to the range [1, limit]. */
+static int
+cells_for(int64_t num, int64_t den, uint32_t limit)
+{
+    const int64_t value = (num + den - 1) / den;
+    return (int)(value < 1 ? 1 : value > limit ? limit : value);
+}
+
+static void
 kitty_placement_cell_span(
     int src_w, int src_h,
     bool has_cols, uint32_t cols, bool has_rows, uint32_t rows,
@@ -140,35 +148,18 @@ kitty_placement_cell_span(
     if (has_rows)
         r = (int)(rows > max_cells ? max_cells : (rows == 0 ? 1 : rows));
 
-    if (has_cols && has_rows) {
-        /* Use the given span as-is. */
-    } else if (has_cols) {
+    /* With both c and r given, the span is used as-is. */
+    if (!has_cols && !has_rows) {
+        c = cells_for(src_w, cell_width, max_cells);
+        r = cells_for(src_h, cell_height, max_cells);
+    } else if (!has_rows) {
         /* rows = ceil(c * cell_width * src_h / (src_w * cell_height)) */
-        int64_t num = (int64_t)c * cell_width * src_h;
-        int64_t den = (int64_t)src_w * cell_height;
-        int64_t value = (num + den - 1) / den;
-        if (value > max_cells)
-            value = max_cells;
-        r = (int)(value < 1 ? 1 : value);
-    } else if (has_rows) {
+        r = cells_for((int64_t)c * cell_width * src_h,
+                      (int64_t)src_w * cell_height, max_cells);
+    } else if (!has_cols) {
         /* cols = ceil(r * cell_height * src_w / (src_h * cell_width)) */
-        int64_t num = (int64_t)r * cell_height * src_w;
-        int64_t den = (int64_t)src_h * cell_width;
-        int64_t value = (num + den - 1) / den;
-        if (value > max_cells)
-            value = max_cells;
-        c = (int)(value < 1 ? 1 : value);
-    } else {
-        c = (src_w + cell_width - 1) / cell_width;
-        r = (src_h + cell_height - 1) / cell_height;
-        if (c > (int)max_cells)
-            c = (int)max_cells;
-        if (r > (int)max_cells)
-            r = (int)max_cells;
-        if (c < 1)
-            c = 1;
-        if (r < 1)
-            r = 1;
+        c = cells_for((int64_t)r * cell_height * src_w,
+                      (int64_t)src_h * cell_width, max_cells);
     }
 
     *out_cols = c;
@@ -179,19 +170,12 @@ void
 kitty_placement_dirty(struct terminal *term, struct kitty_placement *p)
 {
     const int num_rows = term->grid->num_rows;
-    const int view = term->grid->view;
     const int rows = term->rows;
 
     /* The visible part of the placement starts at this screen row. It
      * may be negative when the placement starts above the viewport. */
-    int d = (p->row - view + num_rows) & (num_rows - 1);
     int top;
-
-    if (d < rows)
-        top = d;
-    else if (num_rows - d < p->rows)
-        top = -(num_rows - d);
-    else
+    if (!kitty_placement_visible_top(term, p, &top))
         return;
 
     const int first_col = max(0, p->col);
@@ -439,11 +423,9 @@ kitty_placement_put(
             continue;
         }
 
-        kitty_placement_cache_free(store, &it->item);
-        /* The replaced placement refers to the same image; keep the
-         * image's placement count in sync. */
-        if (it->item.image != NULL && it->item.image->placements > 0)
-            it->item.image->placements--;
+        /* placement_unlink() also keeps the image's placement count in
+         * sync. */
+        placement_unlink(store, &it->item);
         kitty_placement_remove(store, it);
         break;
     }
@@ -684,25 +666,11 @@ kitty_placement_delete(struct terminal *term, const struct kitty_command *cmd)
         if (!delete_matches(term, cmd, p, number_image))
             continue;
 
-        if (p->image != NULL && p->image->placements > 0)
-            p->image->placements--;
-
         /* Repaint the cells the placement covered. */
         kitty_placement_dirty(term, p);
-        kitty_placement_cache_free(store, p);
-
-        const uint32_t id = p->image_id;
+        tll_push_back(touched, p->image_id);
+        placement_unlink(store, p);
         kitty_placement_remove(store, it);
-
-        bool seen = false;
-        tll_foreach(touched, t) {
-            if (t->item == id) {
-                seen = true;
-                break;
-            }
-        }
-        if (!seen)
-            tll_push_back(touched, id);
     }
 
     if (uppercase) {
@@ -759,10 +727,7 @@ kitty_placement_delete(struct terminal *term, const struct kitty_command *cmd)
  */
 #define scroll_drop(term, store, it)                                \
     do {                                                            \
-        struct kitty_placement *_p = &(it)->item;                   \
-        if (_p->image != NULL && _p->image->placements > 0)         \
-            _p->image->placements--;                                \
-        kitty_placement_cache_free((store), _p);                    \
+        placement_unlink((store), &(it)->item);                     \
         kitty_placement_remove((store), (it));                      \
     } while (0)
 

@@ -50,12 +50,47 @@ kitty_checked_size(
     return true;
 }
 
+/*
+ * Decode base64 text with or without the '=' padding. Some clients
+ * (for example kitten) omit it. base64_decode() needs the padding, so
+ * a padded copy is decoded.
+ */
+char *
+kitty_base64_decode(const char *s, size_t *out_len)
+{
+    const size_t len = strlen(s);
+    if (len % 4 == 0)
+        return base64_decode(s, out_len);
+
+    const size_t padded_len = (len + 3) / 4 * 4;
+    char *padded = xmalloc(padded_len + 1);
+    memcpy(padded, s, len);
+    memset(padded + len, '=', padded_len - len);
+    padded[padded_len] = '\0';
+
+    char *ret = base64_decode(padded, out_len);
+    free(padded);
+    return ret;
+}
+
+UNITTEST
+{
+    size_t size = 0;
+
+    char *decoded = kitty_base64_decode("TWE", &size);
+    xassert(decoded != NULL && size == 2 && memcmp(decoded, "Ma", 2) == 0);
+    free(decoded);
+
+    decoded = kitty_base64_decode("TQ", &size);
+    xassert(decoded != NULL && size == 1 && decoded[0] == 'M');
+    free(decoded);
+}
+
 void
 kitty_image_store_init(struct kitty_image_store *store)
 {
     memset(store, 0, sizeof(*store));
     store->next_id = 1;
-    store->next_serial = 1;
     store->quota = KITTY_IMAGE_QUOTA;
 }
 
@@ -112,6 +147,20 @@ kitty_image_store_alloc_id(struct kitty_image_store *store)
     }
 }
 
+/*
+ * Remove one image. The removal callback runs first, so that no
+ * placement refers to a freed image.
+ */
+#define image_remove(store, it)                                        \
+    do {                                                               \
+        if ((store)->on_remove != NULL)                                \
+            (store)->on_remove(                                        \
+                (store)->on_remove_user, (it)->item.id);               \
+        (store)->bytes -= (it)->item.size;                             \
+        kitty_image_destroy(&(it)->item);                              \
+        tll_remove((store)->images, (it));                             \
+    } while (0)
+
 bool
 kitty_image_store_delete_id(struct kitty_image_store *store, uint32_t id)
 {
@@ -119,12 +168,7 @@ kitty_image_store_delete_id(struct kitty_image_store *store, uint32_t id)
         if (it->item.id != id)
             continue;
 
-        if (store->on_remove != NULL)
-            store->on_remove(store->on_remove_user, it->item.id);
-
-        store->bytes -= it->item.size;
-        kitty_image_destroy(&it->item);
-        tll_remove(store->images, it);
+        image_remove(store, it);
         return true;
     }
 
@@ -142,12 +186,7 @@ kitty_image_store_delete_unreferenced(struct kitty_image_store *store)
         if (it->item.placements > 0)
             continue;
 
-        if (store->on_remove != NULL)
-            store->on_remove(store->on_remove_user, it->item.id);
-
-        store->bytes -= it->item.size;
-        kitty_image_destroy(&it->item);
-        tll_remove(store->images, it);
+        image_remove(store, it);
     }
 }
 
@@ -164,12 +203,7 @@ store_remove_oldest(
         if ((it->item.placements > 0) != with_placements)
             continue;
 
-        if (store->on_remove != NULL)
-            store->on_remove(store->on_remove_user, it->item.id);
-
-        store->bytes -= it->item.size;
-        kitty_image_destroy(&it->item);
-        tll_remove(store->images, it);
+        image_remove(store, it);
         return true;
     }
 
@@ -191,12 +225,7 @@ kitty_image_store_add(
             continue;
 
         /* Placements of the replaced image must not outlive it. */
-        if (store->on_remove != NULL)
-            store->on_remove(store->on_remove_user, it->item.id);
-
-        store->bytes -= it->item.size;
-        kitty_image_destroy(&it->item);
-        tll_remove(store->images, it);
+        image_remove(store, it);
         break;
     }
 
@@ -211,11 +240,8 @@ kitty_image_store_add(
         }
     }
 
-    struct kitty_image copy = *image;
-    copy.serial = store->next_serial++;
-
-    tll_push_back(store->images, copy);
-    store->bytes += copy.size;
+    tll_push_back(store->images, *image);
+    store->bytes += image->size;
     return true;
 }
 
@@ -413,26 +439,15 @@ kitty_image_decode_raw(
         ok = decode_png(raw, raw_len, max_bytes, out, error);
     } else if (raw_len != raw_expected) {
         *error = "ENODATA:wrong data length";
-    } else if (cmd->format == KITTY_FORMAT_RGB) {
-        const size_t count = rgba_size / 4;
-        out->data = xmalloc(rgba_size);
-        for (size_t i = 0; i < count; i++) {
-            out->data[i] = 0xff000000u |
-                ((uint32_t)raw[3 * i + 0] << 16) |
-                ((uint32_t)raw[3 * i + 1] << 8) |
-                ((uint32_t)raw[3 * i + 2]);
-        }
-        out->width = cmd->width;
-        out->height = cmd->height;
-        out->size = rgba_size;
-        ok = true;
     } else {
         const size_t count = rgba_size / 4;
         out->data = xmalloc(rgba_size);
         for (size_t i = 0; i < count; i++) {
+            /* RGB has no alpha. With a = 0xff, premultiply() keeps the
+             * color unchanged. */
+            const uint8_t *px = &raw[bpp * i];
             out->data[i] = premultiply(
-                raw[4 * i + 0], raw[4 * i + 1],
-                raw[4 * i + 2], raw[4 * i + 3]);
+                px[0], px[1], px[2], bpp == 4 ? px[3] : 0xff);
         }
         out->width = cmd->width;
         out->height = cmd->height;
@@ -472,7 +487,7 @@ kitty_image_decode(
     memset(out, 0, sizeof(*out));
 
     size_t decoded_len = 0;
-    char *decoded = base64_decode(payload, &decoded_len);
+    char *decoded = kitty_base64_decode(payload, &decoded_len);
     if (decoded == NULL) {
         *error = "EINVAL:invalid base64";
         return false;

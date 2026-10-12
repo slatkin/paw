@@ -346,7 +346,7 @@ kitty_file_load(
         return false;
 
     size_t name_len = 0;
-    char *name = base64_decode(payload, &name_len);
+    char *name = kitty_base64_decode(payload, &name_len);
     if (name == NULL) {
         LOG_DBG("invalid base64 name");
         return false;

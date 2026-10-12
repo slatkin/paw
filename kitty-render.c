@@ -206,11 +206,8 @@ kitty_render_prepass(struct terminal *term)
 
 void
 kitty_render_overlay(
-    struct terminal *term, pixman_image_t *pix,
-    pixman_region32_t *damage, const struct coord *cursor)
+    struct terminal *term, pixman_image_t *pix, pixman_region32_t *damage)
 {
-    (void)cursor;
-
     if (term->kitty == NULL || overlay_hidden(term))
         return;
 
@@ -313,6 +310,39 @@ cell_has_default_bg(const struct terminal *term, const struct cell *cell)
     return false;
 }
 
+/*
+ * Composite the part of the placement's cache under one cell. src_x
+ * and src_y may be negative, when the cell starts left of or above the
+ * cache. The clipped part is drawn at (dst_x, dst_y).
+ */
+static void
+blit_cell(
+    pixman_image_t *pix, const struct kitty_placement *p,
+    int src_x, int src_y, int dst_x, int dst_y, int w, int h)
+{
+    if (src_x < 0) {
+        dst_x -= src_x;
+        w += src_x;
+        src_x = 0;
+    }
+    if (src_y < 0) {
+        dst_y -= src_y;
+        h += src_y;
+        src_y = 0;
+    }
+    if (src_x + w > p->cache_w)
+        w = p->cache_w - src_x;
+    if (src_y + h > p->cache_h)
+        h = p->cache_h - src_y;
+
+    if (w <= 0 || h <= 0)
+        return;
+
+    pixman_image_composite32(
+        PIXMAN_OP_OVER, p->cache_pix, NULL, pix,
+        src_x, src_y, 0, 0, dst_x, dst_y, w, h);
+}
+
 void
 kitty_render_underlay(
     struct terminal *term, pixman_image_t *pix,
@@ -350,34 +380,7 @@ kitty_render_underlay(
         const int py =
             term->margins.top + top * cell_h + p->Y + p->cache_y;
 
-        int src_x = x - px;
-        int src_y = y - py;
-        int dst_x = x;
-        int dst_y = y;
-        int w = cell_w;
-        int h = cell_h;
-
-        if (src_x < 0) {
-            dst_x -= src_x;
-            w += src_x;
-            src_x = 0;
-        }
-        if (src_y < 0) {
-            dst_y -= src_y;
-            h += src_y;
-            src_y = 0;
-        }
-        if (src_x + w > p->cache_w)
-            w = p->cache_w - src_x;
-        if (src_y + h > p->cache_h)
-            h = p->cache_h - src_y;
-
-        if (w <= 0 || h <= 0)
-            continue;
-
-        pixman_image_composite32(
-            PIXMAN_OP_OVER, p->cache_pix, NULL, pix,
-            src_x, src_y, 0, 0, dst_x, dst_y, w, h);
+        blit_cell(pix, p, x - px, y - py, x, y, cell_w, cell_h);
     }
 }
 
@@ -590,10 +593,8 @@ kitty_cell_is_placeholder(
 bool
 kitty_render_placeholder(
     struct terminal *term, pixman_image_t *pix,
-    const struct row *row, int row_no, int col, int x, int y)
+    const struct row *row, int col, int x, int y)
 {
-    (void)row_no;
-
     uint32_t id, placement_id;
     int p_row, p_col;
 
@@ -628,33 +629,9 @@ kitty_render_placeholder(
 
     /* The cache is the fitted, centered image; the box cell (p_row,
      * p_col) selects the matching slice. */
-    int src_x = p_col * cell_w - p->cache_x;
-    int src_y = p_row * cell_h - p->cache_y;
-    int dst_x = x;
-    int dst_y = y;
-    int w = cell_w;
-    int h = cell_h;
-
-    if (src_x < 0) {
-        dst_x -= src_x;
-        w += src_x;
-        src_x = 0;
-    }
-    if (src_y < 0) {
-        dst_y -= src_y;
-        h += src_y;
-        src_y = 0;
-    }
-    if (src_x + w > p->cache_w)
-        w = p->cache_w - src_x;
-    if (src_y + h > p->cache_h)
-        h = p->cache_h - src_y;
-
-    if (w > 0 && h > 0) {
-        pixman_image_composite32(
-            PIXMAN_OP_OVER, p->cache_pix, NULL, pix,
-            src_x, src_y, 0, 0, dst_x, dst_y, w, h);
-    }
+    blit_cell(
+        pix, p, p_col * cell_w - p->cache_x, p_row * cell_h - p->cache_y,
+        x, y, cell_w, cell_h);
 
     return true;
 }
@@ -954,7 +931,7 @@ UNITTEST
      * unscaled (cell 4x4, image 4x4). */
     test_placeholder_cell(&cells[0], test_placeholder_wc(
                               &term, (char32_t[]){kitty_diacritics[0]}, 1), 42);
-    xassert(kitty_render_placeholder(&term, dst_pix, &row, 0, 0, 0, 0));
+    xassert(kitty_render_placeholder(&term, dst_pix, &row, 0, 0, 0));
     xassert(dst[0] == 0xffff0000u);
 
     /* Row 1 is outside the 1-row placement: nothing is drawn. */
@@ -962,7 +939,7 @@ UNITTEST
         dst[i] = 0xff0000ffu;
     test_placeholder_cell(&cells[0], test_placeholder_wc(
                               &term, (char32_t[]){kitty_diacritics[1]}, 1), 42);
-    xassert(kitty_render_placeholder(&term, dst_pix, &row, 0, 0, 0, 0));
+    xassert(kitty_render_placeholder(&term, dst_pix, &row, 0, 0, 0));
     xassert(dst[0] == 0xff0000ffu);
 
     /* Column 1 is outside the 1-column placement: nothing is drawn. */
@@ -972,7 +949,7 @@ UNITTEST
                               &term, (char32_t[]){
                                   kitty_diacritics[0], kitty_diacritics[1]}, 2),
                           42);
-    xassert(kitty_render_placeholder(&term, dst_pix, &row, 0, 0, 0, 0));
+    xassert(kitty_render_placeholder(&term, dst_pix, &row, 0, 0, 0));
     xassert(dst[0] == 0xff0000ffu);
 
     /* Unknown image id: nothing is drawn. */
@@ -980,7 +957,7 @@ UNITTEST
         dst[i] = 0xff0000ffu;
     test_placeholder_cell(&cells[0], test_placeholder_wc(
                               &term, (char32_t[]){kitty_diacritics[0]}, 1), 43);
-    xassert(kitty_render_placeholder(&term, dst_pix, &row, 0, 0, 0, 0));
+    xassert(kitty_render_placeholder(&term, dst_pix, &row, 0, 0, 0));
     xassert(dst[0] == 0xff0000ffu);
 
     pixman_image_unref(dst_pix);

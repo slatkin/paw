@@ -1045,7 +1045,7 @@ render_cell(struct terminal *term, pixman_image_t *pix,
     /* Kitty graphics: the placeholder image slice is drawn over the
      * background, like an underlay (design D6, D8). */
     if (kitty_placeholder)
-        kitty_render_placeholder(term, pix, row, row_no, col, x, y);
+        kitty_render_placeholder(term, pix, row, col, x, y);
 
     if (cell->attrs.blink && term->blink.fd < 0) {
         /* TODO: use a custom lock for this? */
@@ -3611,7 +3611,7 @@ grid_render(struct terminal *term)
 
     /* Kitty graphics: overlay z >= 0 placements on top of the text
      * (design D6). */
-    kitty_render_overlay(term, buf->pix[0], &damage, &cursor);
+    kitty_render_overlay(term, buf->pix[0], &damage);
 
     for (size_t i = 0; i < term->render.workers.count; i++)
         pixman_region32_union(&damage, &damage, &buf->dirty[i + 1]);

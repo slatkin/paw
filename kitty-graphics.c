@@ -29,8 +29,6 @@ enum { KITTY_CONTROL_DATA_MAX = 1024 };
 enum { KITTY_APC_MAX = 320u * 1024 * 1024 };
 
 struct kitty_graphics {
-    struct terminal *term;
-
     struct {
         char *data;
         size_t len;
@@ -128,7 +126,6 @@ kitty_init(struct terminal *term)
 {
     xassert(term->kitty == NULL);
     term->kitty = xcalloc(1, sizeof(struct kitty_graphics));
-    term->kitty->term = term;
 
     for (int i = 0; i < 2; i++)
         kitty_screen_init(term->kitty, i);
@@ -152,6 +149,11 @@ kitty_fini(struct terminal *term)
 static void
 kitty_chunk_reset(struct kitty_graphics *kitty)
 {
+    /* Free the payload, so that a finished transfer does not keep its
+     * peak size for the life of the window. */
+    free(kitty->chunk.data);
+    kitty->chunk.data = NULL;
+    kitty->chunk.size = 0;
     kitty->chunk.active = false;
     kitty->chunk.len = 0;
 }
@@ -539,48 +541,44 @@ kitty_reply(struct terminal *term, const struct kitty_command *cmd,
     term_to_slave(term, buf, n);
 }
 
+/*
+ * Load the image data of a transmit or query command. Direct data is
+ * base64 in the escape code. File, temp file and shared memory read
+ * the bytes from the named object (design D4).
+ */
+static bool
+kitty_load(
+    const struct kitty_command *cmd, const char *payload, size_t payload_len,
+    size_t quota, struct kitty_image *image, const char **error)
+{
+    if (cmd->medium == KITTY_MEDIUM_DIRECT) {
+        return kitty_image_decode(
+            cmd, payload, payload_len, quota, image, error);
+    }
+
+    uint8_t *data = NULL;
+    size_t len = 0;
+    bool ok = kitty_file_load(
+        cmd, payload, payload_len, quota, &data, &len, error);
+    if (ok)
+        ok = kitty_image_decode_raw(cmd, data, len, quota, image, error);
+    free(data);
+    return ok;
+}
+
+/* Store a loaded image under 'id', place it for a=T, and reply. */
 static void
-kitty_transmit(
-    struct terminal *term, const struct kitty_command *cmd,
-    const char *payload, size_t payload_len)
+kitty_store_and_reply(
+    struct terminal *term, const struct kitty_command *cmd, uint32_t id,
+    struct kitty_image *image)
 {
     struct kitty_image_store *store = kitty_image_store_for(term);
-    const uint32_t id = cmd->has_id
-        ? cmd->id
-        : kitty_image_store_alloc_id(store);
 
-    /*
-     * Direct data is base64 in the escape code. File, temp file and
-     * shared memory read the bytes from the named object (design D4).
-     */
-    struct kitty_image image;
-    const char *error = NULL;
-    bool ok;
-
-    if (cmd->medium == KITTY_MEDIUM_DIRECT) {
-        ok = kitty_image_decode(
-            cmd, payload, payload_len, store->quota, &image, &error);
-    } else {
-        uint8_t *data = NULL;
-        size_t len = 0;
-        ok = kitty_file_load(
-            cmd, payload, payload_len, store->quota, &data, &len, &error);
-        if (ok)
-            ok = kitty_image_decode_raw(
-                cmd, data, len, store->quota, &image, &error);
-        free(data);
-    }
-
-    if (!ok) {
-        kitty_reply(term, cmd, id, false, error);
-        return;
-    }
-
-    image.id = id;
-    image.has_number = cmd->has_number;
-    image.number = cmd->number;
-    if (!kitty_image_store_add(store, &image)) {
-        kitty_image_destroy(&image);
+    image->id = id;
+    image->has_number = cmd->has_number;
+    image->number = cmd->number;
+    if (!kitty_image_store_add(store, image)) {
+        kitty_image_destroy(image);
         kitty_reply(term, cmd, id, false, "EINVAL:image too large");
         return;
     }
@@ -598,6 +596,28 @@ kitty_transmit(
     }
 
     kitty_reply(term, cmd, id, true, "OK");
+}
+
+static void
+kitty_transmit(
+    struct terminal *term, const struct kitty_command *cmd,
+    const char *payload, size_t payload_len)
+{
+    struct kitty_image_store *store = kitty_image_store_for(term);
+    const uint32_t id = cmd->has_id
+        ? cmd->id
+        : kitty_image_store_alloc_id(store);
+
+    struct kitty_image image;
+    const char *error = NULL;
+    if (!kitty_load(
+            cmd, payload, payload_len, store->quota, &image, &error))
+    {
+        kitty_reply(term, cmd, id, false, error);
+        return;
+    }
+
+    kitty_store_and_reply(term, cmd, id, &image);
 }
 
 static void
@@ -632,7 +652,7 @@ kitty_handle_transmit(struct terminal *term, const struct kitty_command *cmd,
 
         struct kitty_image image;
         const char *error = NULL;
-        const bool ok = kitty_image_decode(
+        const bool ok = kitty_load(
             &first, kitty->chunk.data, kitty->chunk.len,
             kitty_image_store_for(term)->quota, &image, &error);
 
@@ -643,28 +663,7 @@ kitty_handle_transmit(struct terminal *term, const struct kitty_command *cmd,
             return;
         }
 
-        image.id = id;
-        image.has_number = first.has_number;
-        image.number = first.number;
-        if (!kitty_image_store_add(kitty_image_store_for(term), &image)) {
-            kitty_image_destroy(&image);
-            kitty_reply(term, &first, id, false, "EINVAL:image too large");
-            return;
-        }
-
-        if (first.action == KITTY_ACTION_TRANSMIT_AND_DISPLAY) {
-            struct kitty_image *stored = kitty_image_store_find_id(
-                kitty_image_store_for(term), id);
-            const char *error = stored != NULL
-                ? kitty_placement_put(term, &first, stored)
-                : "ENOENT:no such image";
-            if (error != NULL) {
-                kitty_reply(term, &first, id, false, error);
-                return;
-            }
-        }
-
-        kitty_reply(term, &first, id, true, "OK");
+        kitty_store_and_reply(term, &first, id, &image);
         return;
     }
 
@@ -709,21 +708,8 @@ kitty_handle_query(struct terminal *term, const struct kitty_command *cmd,
      * storing it. */
     struct kitty_image image;
     const char *error = NULL;
-    bool ok;
-
-    if (cmd->medium == KITTY_MEDIUM_DIRECT) {
-        ok = kitty_image_decode(
-            cmd, payload, payload_len, store->quota, &image, &error);
-    } else {
-        uint8_t *data = NULL;
-        size_t len = 0;
-        ok = kitty_file_load(
-            cmd, payload, payload_len, store->quota, &data, &len, &error);
-        if (ok)
-            ok = kitty_image_decode_raw(
-                cmd, data, len, store->quota, &image, &error);
-        free(data);
-    }
+    const bool ok = kitty_load(
+        cmd, payload, payload_len, store->quota, &image, &error);
 
     if (ok)
         kitty_image_destroy(&image);
@@ -828,14 +814,9 @@ kitty_handle_apc(struct terminal *term, const char *data, size_t len)
     case KITTY_ACTION_FRAME:
     case KITTY_ACTION_ANIMATE:
     case KITTY_ACTION_COMPOSE:
-        /* Animation is not supported (spec: Unsupported actions). */
-        kitty_reply(
-            term, &cmd, cmd.has_id ? cmd.id : 0, false,
-            "EINVAL:unsupported action");
-        return;
-
     default:
-        /* Delete selectors are added by a later task. */
+        /* Animation is not supported, and neither is an unknown action
+         * (spec: Unsupported actions). */
         kitty_reply(
             term, &cmd, cmd.has_id ? cmd.id : 0, false,
             "EINVAL:unsupported action");

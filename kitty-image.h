@@ -21,8 +21,6 @@ struct kitty_image {
     bool has_number;
     uint32_t number;
 
-    uint64_t serial; /* Age, for eviction order */
-
     int width, height;    /* Pixels */
     uint32_t *data;       /* Premultiplied a8r8g8b8 */
     size_t size;          /* Bytes */
@@ -41,7 +39,6 @@ struct kitty_image_store {
     tll(struct kitty_image) images;
 
     uint32_t next_id;
-    uint64_t next_serial;
     size_t bytes; /* Sum of image->size */
 
     /*
@@ -137,3 +134,9 @@ bool kitty_image_decode_raw(
 bool kitty_checked_size(
     uint32_t width, uint32_t height, uint32_t bpp, size_t max_bytes,
     size_t *out);
+
+/*
+ * Decode base64 text, padded or not. Returns NULL on error. The caller
+ * frees the result.
+ */
+char *kitty_base64_decode(const char *s, size_t *out_len);

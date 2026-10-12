@@ -1,27 +1,27 @@
 #include "kitty-diacritics.h"
 
+#include <stdlib.h>
+
 #define LOG_MODULE "kitty-diacritics"
 #define LOG_ENABLE_DBG 0
 #include "debug.h"
 
+static int
+diacritic_cmp(const void *key, const void *elem)
+{
+    const uint32_t cp = *(const uint32_t *)key;
+    const uint32_t entry = *(const uint32_t *)elem;
+    return (cp > entry) - (cp < entry);
+}
+
 int
 kitty_diacritic_index(uint32_t cp)
 {
-    int lo = 0;
-    int hi = KITTY_DIACRITICS_COUNT - 1;
+    const uint32_t *found = bsearch(
+        &cp, kitty_diacritics, KITTY_DIACRITICS_COUNT,
+        sizeof(kitty_diacritics[0]), diacritic_cmp);
 
-    while (lo <= hi) {
-        const int mid = lo + (hi - lo) / 2;
-
-        if (kitty_diacritics[mid] < cp)
-            lo = mid + 1;
-        else if (kitty_diacritics[mid] > cp)
-            hi = mid - 1;
-        else
-            return mid;
-    }
-
-    return -1;
+    return found == NULL ? -1 : (int)(found - kitty_diacritics);
 }
 
 UNITTEST

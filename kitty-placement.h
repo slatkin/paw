@@ -102,16 +102,6 @@ void kitty_placement_store_fini(struct kitty_placement_store *store);
 void kitty_placement_on_image_removed(void *user, uint32_t image_id);
 
 /*
- * Compute the cell span of a placement from the source rectangle and
- * the optional c/r keys. Pure function, so it is easy to unit test.
- */
-void kitty_placement_cell_span(
-    int src_w, int src_h,
-    bool has_cols, uint32_t cols, bool has_rows, uint32_t rows,
-    int cell_width, int cell_height,
-    int *out_cols, int *out_rows);
-
-/*
  * Create (or replace) a placement for 'image'. The image must already
  * be in the store of the current screen. Returns NULL on success, or a
  * printable error code and text.

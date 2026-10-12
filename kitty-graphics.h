@@ -118,8 +118,7 @@ void kitty_reflow_end(struct terminal *term);
 void kitty_render_prepass(struct terminal *term);
 
 void kitty_render_overlay(
-    struct terminal *term, pixman_image_t *pix,
-    pixman_region32_t *damage, const struct coord *cursor);
+    struct terminal *term, pixman_image_t *pix, pixman_region32_t *damage);
 
 void kitty_render_underlay(
     struct terminal *term, pixman_image_t *pix,
@@ -147,4 +146,4 @@ bool kitty_cell_is_placeholder(
  */
 bool kitty_render_placeholder(
     struct terminal *term, pixman_image_t *pix,
-    const struct row *row, int row_no, int col, int x, int y);
+    const struct row *row, int col, int x, int y);
