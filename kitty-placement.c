@@ -11,6 +11,18 @@
 #include "util.h"
 #include "xmalloc.h"
 
+/*
+ * Remove a placement from the store. The per-frame underlay list holds
+ * pointers to placement nodes, so any removal invalidates it. Hook A
+ * also runs from render_sixel_images(), before the next
+ * kitty_render_prepass() rebuilds the list.
+ */
+#define kitty_placement_remove(store, it)       \
+    do {                                        \
+        (store)->underlay_count = 0;            \
+        tll_remove((store)->placements, (it));  \
+    } while (0)
+
 void
 kitty_placement_store_init(struct kitty_placement_store *store)
 {
@@ -89,7 +101,7 @@ kitty_placement_on_image_removed(void *user, uint32_t image_id)
             continue;
 
         kitty_placement_cache_free(store, &it->item);
-        tll_remove(store->placements, it);
+        kitty_placement_remove(store, it);
     }
 }
 
@@ -285,7 +297,7 @@ kitty_placement_put(
          * image's placement count in sync. */
         if (it->item.image != NULL && it->item.image->placements > 0)
             it->item.image->placements--;
-        tll_remove(store->placements, it);
+        kitty_placement_remove(store, it);
         break;
     }
 
@@ -372,7 +384,7 @@ placement_covers_screen_cell(
 static bool
 delete_matches(
     struct terminal *term, const struct kitty_command *cmd,
-    const struct kitty_placement *p)
+    const struct kitty_placement *p, const struct kitty_image *number_image)
 {
     const char sel = cmd->has_delete ? cmd->delete_spec : 'a';
     const int num_rows = term->grid->num_rows;
@@ -394,9 +406,8 @@ delete_matches(
 
     case 'n':
     case 'N':
-        if (!cmd->has_number || p->image == NULL)
-            return false;
-        if (!p->image->has_number || p->image->number != cmd->number)
+        /* Only the newest image with this number (spec: Deletion). */
+        if (number_image == NULL || p->image_id != number_image->id)
             return false;
         return !cmd->has_placement_id || p->placement_id == cmd->placement_id;
 
@@ -490,11 +501,20 @@ kitty_placement_delete(struct terminal *term, const struct kitty_command *cmd)
     struct kitty_image_store *images = kitty_image_store_for(term);
     const bool uppercase = sel >= 'A' && sel <= 'Z';
 
+    /*
+     * d=n/N matches the newest image with number I only (spec:
+     * Deletion). Resolve it once, before any placement is removed.
+     */
+    struct kitty_image *number_image =
+        (sel == 'n' || sel == 'N') && cmd->has_number
+        ? kitty_image_store_find_number(images, cmd->number)
+        : NULL;
+
     tll(uint32_t) touched = tll_init();
 
     tll_foreach(store->placements, it) {
         struct kitty_placement *p = &it->item;
-        if (!delete_matches(term, cmd, p))
+        if (!delete_matches(term, cmd, p, number_image))
             continue;
 
         if (p->image != NULL && p->image->placements > 0)
@@ -505,7 +525,7 @@ kitty_placement_delete(struct terminal *term, const struct kitty_command *cmd)
         kitty_placement_cache_free(store, p);
 
         const uint32_t id = p->image_id;
-        tll_remove(store->placements, it);
+        kitty_placement_remove(store, it);
 
         bool seen = false;
         tll_foreach(touched, t) {
@@ -531,12 +551,8 @@ kitty_placement_delete(struct terminal *term, const struct kitty_command *cmd)
                 break;
 
             case 'N':
-                if (cmd->has_number) {
-                    struct kitty_image *image =
-                        kitty_image_store_find_number(images, cmd->number);
-                    if (image != NULL)
-                        delete_image_if_unused(images, image->id);
-                }
+                if (number_image != NULL)
+                    delete_image_if_unused(images, number_image->id);
                 break;
 
             case 'R':
@@ -791,6 +807,127 @@ UNITTEST
 
 #undef DELETE_RUN
 #undef DELETE_SETUP
+
+    kitty_fini(&term);
+    free(term.normal.rows);
+}
+
+UNITTEST
+{
+    /*
+     * Removing a placement must invalidate the per-frame underlay
+     * list. Hook A can run from render_sixel_images(), before the next
+     * prepass rebuilds the list, so a stale pointer would be read
+     * after the node is freed.
+     */
+    struct terminal term = {0};
+    term.ptmx = -1;
+    term.rows = 4;
+    term.cols = 8;
+    term.cell_width = 8;
+    term.cell_height = 16;
+    term.normal.num_rows = 8;
+    term.normal.rows = xcalloc(8, sizeof(term.normal.rows[0]));
+    term.grid = &term.normal;
+
+    kitty_init(&term);
+
+    struct kitty_image_store *images = kitty_image_store_for(&term);
+    struct kitty_placement_store *store = kitty_placement_store_for(&term);
+
+    uint32_t *pixels = xcalloc(1, sizeof(pixels[0]));
+    pixels[0] = 0xff000000u;
+    struct kitty_image proto = {
+        .id = 4, .width = 1, .height = 1,
+        .data = pixels, .size = sizeof(pixels[0]),
+    };
+    xassert(kitty_image_store_add(images, &proto));
+
+    struct kitty_command pc;
+    kitty_command_init(&pc);
+    pc.action = KITTY_ACTION_PUT;
+    pc.has_id = true; pc.id = 4;
+    pc.has_cols = true; pc.cols = 2;
+    pc.has_rows = true; pc.rows = 2;
+    pc.has_cursor = true; pc.cursor = 1;
+    pc.has_z = true; pc.z = -1;
+    xassert(kitty_placement_put(
+                &term, &pc, kitty_image_store_find_id(images, 4)) == NULL);
+
+    kitty_render_prepass(&term);
+    xassert(store->underlay_count == 1);
+
+    struct kitty_command dc;
+    kitty_command_init(&dc);
+    dc.action = KITTY_ACTION_DELETE;
+    dc.has_delete = true;
+    dc.delete_spec = 'i';
+    dc.has_id = true; dc.id = 4;
+    kitty_placement_delete(&term, &dc);
+
+    xassert(tll_length(store->placements) == 0);
+    xassert(store->underlay_count == 0);
+
+    kitty_fini(&term);
+    free(term.normal.rows);
+}
+
+UNITTEST
+{
+    /*
+     * d=n/N deletes the placement of the newest image with number I
+     * only, not every image that shares that number (spec: Deletion).
+     */
+    struct terminal term = {0};
+    term.ptmx = -1;
+    term.rows = 4;
+    term.cols = 8;
+    term.cell_width = 8;
+    term.cell_height = 16;
+    term.normal.num_rows = 8;
+    term.normal.rows = xcalloc(8, sizeof(term.normal.rows[0]));
+    term.grid = &term.normal;
+
+    kitty_init(&term);
+
+    struct kitty_image_store *images = kitty_image_store_for(&term);
+    struct kitty_placement_store *store = kitty_placement_store_for(&term);
+
+    /* Image 11 is added last, so it is the newest with number 7. */
+    for (uint32_t id = 10; id <= 11; id++) {
+        uint32_t *pixels = xcalloc(1, sizeof(pixels[0]));
+        pixels[0] = 0xff000000u;
+        struct kitty_image proto = {
+            .id = id, .has_number = true, .number = 7,
+            .width = 1, .height = 1,
+            .data = pixels, .size = sizeof(pixels[0]),
+        };
+        xassert(kitty_image_store_add(images, &proto));
+
+        struct kitty_command pc;
+        kitty_command_init(&pc);
+        pc.action = KITTY_ACTION_PUT;
+        pc.has_id = true; pc.id = id;
+        pc.has_cursor = true; pc.cursor = 1;
+        xassert(kitty_placement_put(
+                    &term, &pc, kitty_image_store_find_id(images, id)) == NULL);
+    }
+
+    xassert(tll_length(store->placements) == 2);
+
+    struct kitty_command dc;
+    kitty_command_init(&dc);
+    dc.action = KITTY_ACTION_DELETE;
+    dc.has_delete = true;
+    dc.delete_spec = 'n';
+    dc.has_number = true; dc.number = 7;
+    kitty_placement_delete(&term, &dc);
+
+    struct kitty_image *older = kitty_image_store_find_id(images, 10);
+    struct kitty_image *newer = kitty_image_store_find_id(images, 11);
+    xassert(older != NULL && older->placements == 1);
+    xassert(newer != NULL && newer->placements == 0);
+    xassert(tll_length(store->placements) == 1);
 
     kitty_fini(&term);
     free(term.normal.rows);
