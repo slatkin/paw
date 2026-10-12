@@ -80,6 +80,12 @@
   ([#2462][2462]).
 * **Breaking**: the config file is now `~/.config/paw/paw.ini`. Move an
   existing file with `mv ~/.config/foot/foot.ini ~/.config/paw/paw.ini`.
+* **Breaking**: the binaries are now `paw` and `pawclient`. The server
+  socket is `$XDG_RUNTIME_DIR/paw-$WAYLAND_DISPLAY.sock`. The default
+  app-ids are `paw` and `pawclient`. The XTVERSION reply starts with
+  `paw`. The desktop files, systemd units (`paw-server.service`,
+  `paw-server.socket`), completions, icon, and man pages use paw names.
+  `TERM` is still `foot`.
 
 [2462]: https://codeberg.org/dnkl/foot/issues/2462
 

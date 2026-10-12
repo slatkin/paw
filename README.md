@@ -108,10 +108,14 @@ These literals are internal and keep the `foot` name:
 * the `foot-features.h` and `foot-terminfo.h` includes
 * `LOG_MODULE` strings
 * memfd and Wayland shm pool names
+* the `foot-pgo-ptmx` memfd name in `pgo/pgo.c`
 * `U"foot"` in the `char32.c` tests
 * the `foot:render` process title in `render.c`
 
 Rebrand every other user-visible `"foot` literal.
+
+Also check that `icons/meson.build` installs every new icon file
+upstream adds. It lists the icon files by name.
 
 Also check that a conflict resolution adds no `"foot` literal on the
 fork side:
