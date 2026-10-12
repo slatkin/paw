@@ -65,6 +65,8 @@ struct kitty_image_store {
 void kitty_image_store_init(struct kitty_image_store *store);
 void kitty_image_store_fini(struct kitty_image_store *store);
 
+struct kitty_image_store *kitty_image_store_for(struct terminal *term);
+
 struct kitty_image *kitty_image_store_find_id(
     struct kitty_image_store *store, uint32_t id);
 struct kitty_image *kitty_image_store_find_number(

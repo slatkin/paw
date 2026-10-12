@@ -70,7 +70,7 @@ kitty_screen_idx(struct terminal *term)
     return term->grid == &term->alt ? 1 : 0;
 }
 
-static struct kitty_image_store *
+struct kitty_image_store *
 kitty_image_store_for(struct terminal *term)
 {
     return &term->kitty->screens[kitty_screen_idx(term)].image_store;

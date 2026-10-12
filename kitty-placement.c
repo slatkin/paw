@@ -9,6 +9,7 @@
 #include "grid.h"
 #include "log.h"
 #include "util.h"
+#include "xmalloc.h"
 
 void
 kitty_placement_store_init(struct kitty_placement_store *store)
@@ -250,6 +251,10 @@ kitty_placement_put(
         }
 
         kitty_placement_cache_free(store, &it->item);
+        /* The replaced placement refers to the same image; keep the
+         * image's placement count in sync. */
+        if (it->item.image != NULL && it->item.image->placements > 0)
+            it->item.image->placements--;
         tll_remove(store->placements, it);
         break;
     }
@@ -289,6 +294,59 @@ kitty_placement_put(
     }
 
     return NULL;
+}
+
+UNITTEST
+{
+    /*
+     * Replacing a placement with the same (image id, placement id)
+     * must not leak the image's placement count: it stays one.
+     */
+    struct terminal term = {0};
+    term.ptmx = -1;
+    term.rows = 4;
+    term.cols = 4;
+    term.cell_width = 8;
+    term.cell_height = 16;
+    term.normal.num_rows = 8;
+    term.normal.rows = xcalloc(8, sizeof(term.normal.rows[0]));
+    term.grid = &term.normal;
+
+    kitty_init(&term);
+
+    struct kitty_image_store *images = kitty_image_store_for(&term);
+
+    uint32_t *pixels = xcalloc(1, sizeof(pixels[0]));
+    pixels[0] = 0xff000000u;
+    struct kitty_image proto = {
+        .id = 5,
+        .width = 1,
+        .height = 1,
+        .data = pixels,
+        .size = sizeof(pixels[0]),
+    };
+    xassert(kitty_image_store_add(images, &proto));
+    struct kitty_image *img = kitty_image_store_find_id(images, 5);
+    xassert(img != NULL);
+
+    struct kitty_command cmd;
+    kitty_command_init(&cmd);
+    cmd.action = KITTY_ACTION_PUT;
+    cmd.has_id = true;
+    cmd.id = 5;
+    cmd.has_placement_id = true;
+    cmd.placement_id = 0;
+    cmd.has_cursor = true;
+    cmd.cursor = 1;
+
+    for (int i = 0; i < 100; i++)
+        xassert(kitty_placement_put(&term, &cmd, img) == NULL);
+
+    xassert(img->placements == 1);
+    xassert(tll_length(kitty_placement_store_for(&term)->placements) == 1);
+
+    kitty_fini(&term);
+    free(term.normal.rows);
 }
 
 UNITTEST
