@@ -3090,6 +3090,7 @@ term_scroll_partial(struct terminal *term, struct scroll_region region, int rows
     }
 
     sixel_scroll_up(term, rows);
+    kitty_scroll_up(term, region, rows);
 
     /* How many lines from the scrollback start is the current viewport? */
     int view_sb_start_distance = grid_row_abs_to_sb(
@@ -3176,6 +3177,7 @@ term_scroll_reverse_partial(struct terminal *term,
     }
 
     sixel_scroll_down(term, rows);
+    kitty_scroll_down(term, region, rows);
 
     const bool view_follows = term->grid->view == term->grid->offset;
     term->grid->offset -= rows;

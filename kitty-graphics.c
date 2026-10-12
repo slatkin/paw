@@ -883,16 +883,6 @@ kitty_apc_end(struct terminal *term)
 }
 
 void
-kitty_scroll_up(struct terminal *term, struct scroll_region region, int rows)
-{
-}
-
-void
-kitty_scroll_down(struct terminal *term, struct scroll_region region, int rows)
-{
-}
-
-void
 kitty_clear_visible(struct terminal *term)
 {
 }
