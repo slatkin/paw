@@ -8,8 +8,7 @@
 
 /*
  * The single reply for every failure to read image data from a file,
- * temp file or shared memory object (spec: One error for all file
- * failures).
+ * temp file or shared memory object.
  */
 #define KITTY_FILE_ERROR "EBADF:Failed to read image file"
 

@@ -755,7 +755,7 @@ anywhere(struct terminal *term, uint8_t data)
     case 0x1a:                                           action_execute(term, data);                                       return STATE_GROUND;
     case 0x1b:                                                                            action_clear(term);              return STATE_ESCAPE;
 
-    /* 8-bit C1 control characters (not supported) */
+    /* 8-bit C1 control characters (not supported), except APC (0x9f) */
     case 0x80 ... 0x9e:                                                                                                    return STATE_GROUND;
     case 0x9f:                                                                             kitty_apc_start(term);           return STATE_APC_STRING;
     }

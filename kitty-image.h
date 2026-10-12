@@ -9,7 +9,7 @@
 
 #include "kitty-graphics.h"
 
-/* Per-screen budget for decoded pixel data (design D3). */
+/* Per-screen budget for decoded pixel data. */
 enum { KITTY_IMAGE_QUOTA = 320u * 1024 * 1024 };
 
 /*
@@ -27,7 +27,7 @@ struct kitty_image {
     pixman_image_t *pix;
 
     /* Number of placements that refer to this image. Eviction
-     * deletes an image without placements first (design D3). */
+     * deletes an image without placements first. */
     unsigned int placements;
 };
 

@@ -11,7 +11,7 @@
 #include "kitty-image.h"
 
 /*
- * Placement geometry and lifetime (design D5).
+ * Placement geometry and lifetime.
  *
  * All limits below exist because the input is untrusted. They are
  * deliberately larger than any real client needs.
@@ -35,7 +35,7 @@ enum {
 
     /*
      * A placement with z below this value is only drawn in cells with
-     * the default background color (spec: Z-index layers).
+     * the default background color.
      */
     KITTY_Z_DEFAULT_BG_CUTOFF = -(1 << 30),
 };
@@ -117,7 +117,7 @@ const char *kitty_placement_put(
 /*
  * Delete placements as the command's `d` selector selects. Uppercase
  * selectors also free the image data when no placement of the image is
- * left (spec: Deletion). Sends no reply.
+ * left. Sends no reply.
  */
 void kitty_placement_delete(
     struct terminal *term, const struct kitty_command *cmd);
@@ -140,7 +140,7 @@ void kitty_placement_dirty(struct terminal *term, struct kitty_placement *p);
 /*
  * Reflow: shift every placement of 'store' by 'delta' rows in
  * scrollback-relative coordinates, using the old grid geometry, and
- * drop the placements that leave the new ring (design D7).
+ * drop the placements that leave the new ring.
  */
 void kitty_placement_reflow(
     struct terminal *term, struct kitty_placement_store *store,

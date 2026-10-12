@@ -134,8 +134,7 @@ placement_ensure_cache(
     store->cache_bytes += bytes;
 }
 
-/* Overlays are only drawn while the terminal is on the main screen
- * (design D6). */
+/* Overlays are only drawn while the terminal is on the main screen. */
 static bool
 overlay_hidden(struct terminal *term)
 {
@@ -186,8 +185,7 @@ kitty_render_prepass(struct terminal *term)
 
         /*
          * Placeholder images are drawn per cell by hook B; their
-         * scaled cache must be ready before the workers run (design
-         * D6).
+         * scaled cache must be ready before the workers run.
          */
         if (p->virtual_placement) {
             placement_ensure_cache(term, store, p);
@@ -198,8 +196,7 @@ kitty_render_prepass(struct terminal *term)
         if (!kitty_placement_visible_top(term, p, &top))
             continue;
 
-        /* The workers never allocate: build every visible cache here
-         * (design D6). */
+        /* The workers never allocate: build every visible cache here. */
         placement_ensure_cache(term, store, p);
 
         if (p->z < 0)
@@ -287,7 +284,7 @@ kitty_render_overlay(
         /*
          * Repaint the cells under the image on the next frame, so that
          * the image is composited once per frame and alpha does not
-         * add up (design D6).
+         * add up.
          */
         kitty_placement_dirty(term, p);
     }
@@ -297,8 +294,7 @@ kitty_render_overlay(
 
 /*
  * True when the cell's effective background is the default one. This
- * is the same test render_cell() uses for transparency (spec: Z-index
- * layers, the z < -1073741824 rule).
+ * is the same test render_cell() uses for transparency.
  */
 static bool
 cell_has_default_bg(const struct terminal *term, const struct cell *cell)
@@ -398,7 +394,7 @@ kitty_render_underlay(
 /*
  * Resolve a cell's base character and its combining diacritics.
  * Returns the number of diacritics (0..3). Cells with combining
- * characters are stored as composed entries (design D8).
+ * characters are stored as composed entries.
  */
 static int
 placeholder_diacritics(
@@ -429,8 +425,7 @@ placeholder_diacritics(
 
 /*
  * The low 24 bits of the image id: the palette index in index color
- * mode, the 24-bit RGB value in true color mode (spec: Placeholder
- * cells show image parts).
+ * mode, the 24-bit RGB value in true color mode.
  */
 static uint32_t
 placeholder_image_id(const struct terminal *term, const struct cell *cell)
@@ -490,7 +485,7 @@ placeholder_diacritic_value(uint32_t cp)
  * '*out_placement_id' the placement id, and '*out_row' / '*out_col'
  * are the 0-based row and column inside the virtual placement.
  *
- * The inheritance rules are kitty's run-based algorithm (design D8):
+ * The inheritance rules are kitty's run-based algorithm:
  * a row, column and third diacritic may be omitted, and are then
  * inherited from the placeholder cell to the left, when that cell
  * continues the same run (same fg and underline color, and compatible
@@ -613,8 +608,7 @@ kitty_render_placeholder(
     }
 
     /* A placeholder never shows a glyph; draw nothing when hidden or
-     * when no image matches (spec: Placeholder cells show image
-     * parts). */
+     * when no image matches. */
     if (term->kitty == NULL || overlay_hidden(term))
         return true;
 
@@ -625,7 +619,7 @@ kitty_render_placeholder(
         return true;
 
     /* Bounds: a row or column outside the virtual placement shows the
-     * cell background (spec: Image fit inside the placeholder area). */
+     * cell background. */
     if (p_row < 0 || p_row >= p->rows ||
         p_col < 0 || p_col >= p->cols)
     {
@@ -646,7 +640,7 @@ kitty_render_placeholder(
 
 /*
  * Test helpers. A placeholder cell with combining characters is stored
- * as a composed entry (design D8), exactly as the VT parser builds it.
+ * as a composed entry, exactly as the VT parser builds it.
  */
 static char32_t
 test_placeholder_wc(

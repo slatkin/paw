@@ -869,7 +869,7 @@ render_cell(struct terminal *term, pixman_image_t *pix,
     int cell_cols = 1;
 
     /* Kitty graphics: a U+10EEEE placeholder cell draws an image
-     * slice instead of a glyph (design D6, D8). */
+     * slice instead of a glyph. */
     const bool kitty_placeholder = kitty_cell_is_placeholder(term, cell);
 
     if (base != 0 && !kitty_placeholder) {
@@ -1039,11 +1039,11 @@ render_cell(struct terminal *term, pixman_image_t *pix,
         &(pixman_rectangle16_t){x, y, cell_cols * width, height});
 
     /* Kitty graphics: z < 0 placements are under the glyphs, over the
-     * background (design D6). */
+     * background. */
     kitty_render_underlay(term, pix, row, row_no, col, x, y);
 
     /* Kitty graphics: the placeholder image slice is drawn over the
-     * background, like an underlay (design D6, D8). */
+     * background, like an underlay. */
     if (kitty_placeholder)
         kitty_render_placeholder(term, pix, row, col, x, y);
 
@@ -3568,7 +3568,7 @@ grid_render(struct terminal *term)
     render_sixel_images(term, buf->pix[0], &damage, &cursor);
 
     /* Kitty graphics: build the scaled-image cache before the workers
-     * start (design D6). */
+     * start. */
     kitty_render_prepass(term);
 
     if (term->render.workers.count > 0) {
@@ -3609,8 +3609,7 @@ grid_render(struct terminal *term)
         term->render.workers.buf = NULL;
     }
 
-    /* Kitty graphics: overlay z >= 0 placements on top of the text
-     * (design D6). */
+    /* Kitty graphics: overlay z >= 0 placements on top of the text. */
     kitty_render_overlay(term, buf->pix[0], &damage);
 
     for (size_t i = 0; i < term->render.workers.count; i++)

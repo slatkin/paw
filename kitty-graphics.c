@@ -18,13 +18,13 @@
 #include "xmalloc.h"
 #include "xsnprintf.h"
 
-/* Control data limit, from design D2. */
+/* Control data limit. */
 enum { KITTY_CONTROL_DATA_MAX = 1024 };
 
 /*
  * A single non-chunked command can carry a full image. Cap the APC
  * buffer at the image quota so untrusted input cannot grow it without
- * bound (design D2). The quota is 320 MB; base64 inflates by 4/3.
+ * bound. The quota is 320 MB; base64 inflates by 4/3.
  */
 enum { KITTY_APC_MAX = 320u * 1024 * 1024 };
 
@@ -37,7 +37,7 @@ struct kitty_graphics {
     } apc;
 
     /*
-     * Chunked direct transmission (design D2). The first chunk
+     * Chunked direct transmission. The first chunk
      * carries the full control data; the payloads are joined and
      * decoded when the final chunk arrives.
      */
@@ -50,15 +50,14 @@ struct kitty_graphics {
     } chunk;
 
     /*
-     * One image and placement store per screen buffer (design D3,
-     * D5).
+     * One image and placement store per screen buffer.
      */
     struct {
         struct kitty_image_store image_store;
         struct kitty_placement_store placement_store;
     } screens[2];
 
-    /* Reflow state (design D7). */
+    /* Reflow state. */
     struct {
         bool active;
         int old_offset;
@@ -544,7 +543,7 @@ kitty_reply(struct terminal *term, const struct kitty_command *cmd,
 /*
  * Load the image data of a transmit or query command. Direct data is
  * base64 in the escape code. File, temp file and shared memory read
- * the bytes from the named object (design D4).
+ * the bytes from the named object.
  */
 static bool
 kitty_load(
@@ -777,8 +776,7 @@ kitty_handle_apc(struct terminal *term, const char *data, size_t len)
 
     /*
      * Relative placements are not supported. This is a rejection:
-     * it changes no state (spec: Unsupported actions), so an
-     * in-progress transfer is left alone.
+     * it changes no state, so an in-progress transfer is left alone.
      */
     if (cmd.has_parent_id || cmd.has_parent_placement) {
         kitty_reply(
@@ -802,7 +800,7 @@ kitty_handle_apc(struct terminal *term, const char *data, size_t len)
         return;
 
     case KITTY_ACTION_DELETE:
-        /* Delete sends no reply (spec: Deletion). */
+        /* Delete sends no reply. */
         kitty_placement_delete(term, &cmd);
         return;
 
@@ -810,8 +808,8 @@ kitty_handle_apc(struct terminal *term, const char *data, size_t len)
     case KITTY_ACTION_ANIMATE:
     case KITTY_ACTION_COMPOSE:
     default:
-        /* Animation is not supported, and neither is an unknown action
-         * (spec: Unsupported actions). */
+        /* Animation is not supported, and neither is an unknown action is
+         * rejected. */
         kitty_reply(
             term, &cmd, cmd.has_id ? cmd.id : 0, false,
             "EINVAL:unsupported action");
@@ -886,7 +884,7 @@ kitty_alt_screen_clear(struct terminal *term)
     if (term->kitty == NULL)
         return;
 
-    /* The alternate screen always starts empty (design D5). */
+    /* The alternate screen always starts empty. */
     kitty_screen_fini(term->kitty, 1);
     kitty_screen_init(term->kitty, 1);
 }
@@ -914,7 +912,7 @@ kitty_cell_size_changed(struct terminal *term)
 
     /*
      * The cell span of a placement stays; only the scaled cache is
-     * rebuilt at the new cell size, on the next frame (design D5).
+     * rebuilt at the new cell size, on the next frame.
      */
     for (int i = 0; i < 2; i++) {
         struct kitty_placement_store *store =
@@ -933,7 +931,7 @@ kitty_reflow_begin(struct terminal *term)
 
     /*
      * During an interactive resize the reflow source is the stashed
-     * original grid; otherwise it is the normal grid (design D7).
+     * original grid; otherwise it is the normal grid.
      */
     const struct grid *grid =
         term->interactive_resizing.grid != NULL
@@ -1250,8 +1248,7 @@ UNITTEST
 {
     /*
      * Leaving the alternate screen drops all of its images and
-     * placements, and leaves the main screen alone (spec: Clear,
-     * alternate screen, and reset).
+     * placements, and leaves the main screen alone.
      */
     struct terminal term = {0};
     term.ptmx = -1;
@@ -1329,8 +1326,7 @@ UNITTEST
      * DECSTR (soft reset) while on the alternate screen leaves the
      * alternate grid. Its images and placements must not survive, or
      * the next CSI ?1049h, which relies on the exit path having
-     * cleared them, would show them again (spec: Clear, alternate
-     * screen, and reset).
+     * cleared them, would show them again.
      */
     static struct config conf;
     static struct wayland wl;

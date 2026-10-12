@@ -37,7 +37,7 @@ path_inside(const char *path, const char *dir)
 
 /*
  * Refuse the paths the spec names, after symlink resolution. /dev/shm
- * is the one allowed part of /dev (design D4).
+ * is the one allowed part of /dev.
  */
 static bool
 path_allowed(const char *resolved)
@@ -99,10 +99,9 @@ expected_raw_size(const struct kitty_command *cmd, size_t *out)
 
 /*
  * Compute how many bytes to copy from the object. Returns false when
- * the object is shorter than O + S (spec: File too short). Sets
+ * the object is shorter than O + S. Sets
  * '*insufficient' when the uncompressed pixel data is shorter than the
- * dimensions require, which is the file error too (spec: shm short
- * data; this matches kitty).
+ * dimensions require, which is the file error too.
  */
 static bool
 compute_read_size(
@@ -234,7 +233,7 @@ out:
     /*
      * A temp file is deleted after the read attempt, when the
      * resolved path is inside a temp directory and holds the marker
-     * text (spec: Temp file transmission).
+     * text.
      */
     if (opened &&
         cmd->medium == KITTY_MEDIUM_TEMP_FILE &&

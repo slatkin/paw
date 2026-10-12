@@ -32,13 +32,13 @@
 #include "grid.h"
 #include "ime.h"
 #include "input.h"
+#include "kitty-graphics.h"
 #include "notify.h"
 #include "quirks.h"
 #include "reaper.h"
 #include "render.h"
 #include "selection.h"
 #include "shm.h"
-#include "kitty-graphics.h"
 #include "sixel.h"
 #include "slave.h"
 #include "spawn.h"
@@ -2151,13 +2151,7 @@ term_reset(struct terminal *term, bool hard)
         term->grid = &term->normal;
         selection_cancel(term);
 
-        /*
-         * The terminal leaves the alternate grid. Its images and
-         * placements must not survive, or the next alternate-screen
-         * entry, which relies on the exit path having cleared them,
-         * would show them again (spec: Clear, alternate screen, and
-         * reset).
-         */
+        /* Alternate screen images must not survive the reset. */
         kitty_alt_screen_clear(term);
     }
 

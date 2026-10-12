@@ -177,7 +177,7 @@ kitty_image_store_delete_id(struct kitty_image_store *store, uint32_t id)
 
 /*
  * Delete every image that has no placement. Kitty frees such images
- * after a screen clear (spec: Clear, alternate screen, and reset).
+ * after a screen clear.
  */
 void
 kitty_image_store_delete_unreferenced(struct kitty_image_store *store)
@@ -230,7 +230,7 @@ kitty_image_store_add(
     }
 
     /* Make room: images without placements first, oldest first, then
-     * the oldest images with placements (spec: Storage quota). The
+     * the oldest images with placements. The
      * subtraction cannot underflow, because image->size <= quota. */
     while (store->bytes > store->quota - image->size) {
         if (!store_remove_oldest(store, false) &&
@@ -761,7 +761,7 @@ UNITTEST
 {
     /*
      * Eviction order: an image without placements is deleted before an
-     * older image that has one (spec: Storage quota).
+     * older image that has one.
      */
     struct kitty_image_store store;
     kitty_image_store_init(&store);

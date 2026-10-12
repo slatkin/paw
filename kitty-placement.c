@@ -237,8 +237,7 @@ placement_overlaps_screen(
 /*
  * Clear screen (CSI 2 J and CSI 3 J): delete every placement that is
  * visible on the current screen, then free the images that no
- * placement refers to any more (kitty does this; spec: Clear,
- * alternate screen, and reset).
+ * placement refers to any more (kitty does this).
  */
 void
 kitty_clear_visible(struct terminal *term)
@@ -295,7 +294,7 @@ kitty_scrollback_clear(struct terminal *term)
 }
 
 /*
- * Reflow (design D7): move every placement of the main screen by the
+ * Reflow: move every placement of the main screen by the
  * same number of lines as the cursor, then drop the placements that
  * fall outside the new ring. The placement store is passed explicitly,
  * because the alternate screen may be active while the normal grid
@@ -463,8 +462,7 @@ kitty_placement_put(
                      * The move goes past the bottom of the scroll
                      * region: scroll the region, so that the text and
                      * the images move, and leave the cursor on the
-                     * region's bottom row (spec: Cursor movement after
-                     * placement).
+                     * region's bottom row.
                      */
                     int amount = target - (end - 1);
                     if (amount > end - start)
@@ -562,7 +560,7 @@ delete_matches(
 
     case 'n':
     case 'N':
-        /* Only the newest image with this number (spec: Deletion). */
+        /* Only the newest image with this number. */
         if (number_image == NULL || p->image_id != number_image->id)
             return false;
         return !cmd->has_placement_id || p->placement_id == cmd->placement_id;
@@ -658,8 +656,8 @@ kitty_placement_delete(struct terminal *term, const struct kitty_command *cmd)
     const bool uppercase = sel >= 'A' && sel <= 'Z';
 
     /*
-     * d=n/N matches the newest image with number I only (spec:
-     * Deletion). Resolve it once, before any placement is removed.
+     * d=n/N matches the newest image with number I only. Resolve it
+     * once, before any placement is removed.
      */
     struct kitty_image *number_image =
         (sel == 'n' || sel == 'N') && cmd->has_number
@@ -739,7 +737,7 @@ kitty_placement_delete(struct terminal *term, const struct kitty_command *cmd)
     } while (0)
 
 /*
- * Scroll support (design D5, spec: Scrolling).
+ * Scroll support.
  *
  * The hooks run from term_scroll_partial() and
  * term_scroll_reverse_partial(), before the grid offset is updated.
@@ -763,8 +761,7 @@ kitty_placement_delete(struct terminal *term, const struct kitty_command *cmd)
  *
  * Policy (kitty's scroll_filter_* functions, adapted to foot's ring):
  *  - an anchor in the scrollback keeps its ring row; it is deleted
- *    when its content line is destroyed (spec: a placement whose top
- *    row leaves the scrollback is deleted);
+ *    when its content line is destroyed;
  *  - a placement fully inside the scroll region moves with the region
  *    (its ring row is unchanged), and follows the rotation when its
  *    anchor line enters the scrollback, hanging from the top of the
@@ -1463,7 +1460,7 @@ UNITTEST
 {
     /*
      * A cell size change keeps the cell span and the anchor, and drops
-     * only the scaled cache (design D5).
+     * only the scaled cache.
      */
     struct terminal term;
     SCROLL_TERM(term);
@@ -1494,8 +1491,7 @@ UNITTEST
      * Virtual placement (U=1): a=p creates it for an image, without
      * drawing anything by itself and without moving the cursor. It is
      * not visible as a cell, so d=a (all visible) keeps it. d=i
-     * deletes it (spec kitty-graphics-placeholders: Virtual
-     * placements).
+     * deletes it.
      */
     struct terminal term;
     SCROLL_TERM(term);
@@ -1566,9 +1562,9 @@ UNITTEST
 UNITTEST
 {
     /*
-     * The remaining virtual-placement delete rules (spec:
-     * Virtual placements): d=r/R and d=n/N delete a virtual
-     * placement; d=c, d=p, d=x, d=y and d=z leave it alone.
+     * The remaining virtual-placement delete rules: d=r/R and d=n/N
+     * delete a virtual placement; d=c, d=p, d=x, d=y and d=z leave it
+     * alone.
      */
     struct terminal term;
     SCROLL_TERM(term);

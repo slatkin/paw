@@ -26,7 +26,7 @@ kitty_diacritic_index(uint32_t cp)
 
 UNITTEST
 {
-    /* Anchors of design D9: the first three entries and the count. */
+    /* Anchors: the first three entries and the count. */
     xassert(KITTY_DIACRITICS_COUNT == 297);
     xassert(kitty_diacritic_index(0x0305) == 0);
     xassert(kitty_diacritic_index(0x030D) == 1);

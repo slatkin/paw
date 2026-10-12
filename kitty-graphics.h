@@ -135,14 +135,14 @@ void kitty_apc_end(struct terminal *term);
 /*
  * True when the cell's base character is the Unicode placeholder
  * U+10EEEE. Called before the glyph lookup, so that fcft never tries
- * to find a font for the placeholder character (design D6, D8).
+ * to find a font for the placeholder character.
  */
 bool kitty_cell_is_placeholder(
     const struct terminal *term, const struct cell *cell);
 
 /*
  * Draw the image slice of a placeholder cell, after the background
- * fill (design D6, D8). Returns true when the cell is a placeholder.
+ * fill. Returns true when the cell is a placeholder.
  */
 bool kitty_render_placeholder(
     struct terminal *term, pixman_image_t *pix,
