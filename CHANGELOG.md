@@ -78,6 +78,8 @@
 * Cells with a non-default background colors, but otherwise empty, are
   now preserved (not removed) when resizing a terminal window
   ([#2462][2462]).
+* **Breaking**: the config file is now `~/.config/paw/paw.ini`. Move an
+  existing file with `mv ~/.config/foot/foot.ini ~/.config/paw/paw.ini`.
 
 [2462]: https://codeberg.org/dnkl/foot/issues/2462
 

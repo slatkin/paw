@@ -12,6 +12,7 @@ The fast, lightweight and minimalistic Wayland terminal emulator.
 1. [Features](#features)
 1. [Installing](#installing)
 1. [Configuration](#configuration)
+1. [Merging upstream foot](#merging-upstream-foot)
 1. [Troubleshooting](#troubleshooting)
 1. [Why the name 'foot'?](#why-the-name-foot)
 1. [Fonts](#fonts)
@@ -84,6 +85,42 @@ in `/etc/xdg/foot/foot.ini` or
 [here](https://codeberg.org/dnkl/foot/src/branch/master/foot.ini).
 
 Further information can be found in foot's man page `foot.ini(5)`.
+
+
+## Merging upstream foot
+
+paw is a fork of foot. Merge upstream changes like this:
+
+```sh
+git fetch upstream
+git merge upstream/master
+```
+
+Upstream adds `"foot` string literals now and then. After a merge,
+search the tree:
+
+```sh
+git grep -n '"foot' -- '*.c'
+```
+
+These literals are internal and keep the `foot` name:
+
+* the `foot-features.h` and `foot-terminfo.h` includes
+* `LOG_MODULE` strings
+* memfd and Wayland shm pool names
+* `U"foot"` in the `char32.c` tests
+* the `foot:render` process title in `render.c`
+
+Rebrand every other user-visible `"foot` literal.
+
+Also check that a conflict resolution adds no `"foot` literal on the
+fork side:
+
+```sh
+git diff upstream/master -- '*.c' | grep -n '^+.*"foot'
+```
+
+This prints nothing on a clean tree.
 
 
 ## Troubleshooting
