@@ -38,6 +38,7 @@
 #include "render.h"
 #include "selection.h"
 #include "shm.h"
+#include "kitty-graphics.h"
 #include "sixel.h"
 #include "slave.h"
 #include "spawn.h"
@@ -1416,6 +1417,8 @@ term_init(const struct config *conf, struct fdm *fdm, struct reaper *reaper,
 
     pixman_region32_init(&term->render.last_overlay_clip);
 
+    kitty_init(term);
+
     term_update_ascii_printer(term);
     memcpy(term->colors.table, theme->table, sizeof(term->colors.table));
 
@@ -1940,6 +1943,7 @@ term_destroy(struct terminal *term)
         notify_icon_free(&term->notification_icons[i]);
 
     sixel_fini(term);
+    kitty_fini(term);
 
     term_ime_reset(term);
 

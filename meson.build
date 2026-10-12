@@ -154,6 +154,8 @@ wayland_cursor = dependency('wayland-cursor')
 xkb = dependency('xkbcommon', version: '>=1.6.0')
 fontconfig = dependency('fontconfig')
 utf8proc = dependency('libutf8proc', required: get_option('grapheme-clustering'))
+libpng = dependency('libpng')
+zlib = dependency('zlib')
 
 if utf8proc.found()
   add_project_arguments('-DFOOT_GRAPHEME_CLUSTERING=1', language: 'c')
@@ -290,11 +292,12 @@ vtlib = static_library(
 pgolib = static_library(
   'pgolib',
   'grid.c', 'grid.h',
+  'kitty-graphics.c', 'kitty-graphics.h',
   'selection.c', 'selection.h',
   'terminal.c', 'terminal.h',
   emoji_variation_sequences,
   wl_proto_src + wl_proto_headers,
-  dependencies: [libepoll, pixman, fcft, tllist, wayland_client, xkb, utf8proc],
+  dependencies: [libepoll, pixman, fcft, tllist, wayland_client, xkb, utf8proc, libpng, zlib],
   link_with: vtlib,
 )
 
