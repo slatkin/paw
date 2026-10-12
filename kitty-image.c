@@ -640,7 +640,8 @@ UNITTEST
     }
 
     xassert(tll_length(store.images) == 2);
-    struct kitty_image *newest = kitty_image_store_find_number(&store, KITTY_IMAGE_NUMBER(13));
+    struct kitty_image *newest =
+        kitty_image_store_find_number(&store, KITTY_IMAGE_NUMBER(13));
     xassert(newest != NULL);
     xassert(newest == &tll_back(store.images));
 

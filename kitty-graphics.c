@@ -987,6 +987,14 @@ kitty_reflow_end(struct terminal *term)
 
 /* The render hooks (A, B, C) live in kitty-render.c. */
 
+/* The image 'id' of screen buffer 'screen' (0 or 1), or NULL. */
+static struct kitty_image *
+test_screen_image(struct terminal *term, int screen, uint32_t id)
+{
+    return kitty_image_store_find_id(
+        &term->kitty->screens[screen].image_store, KITTY_IMAGE_ID(id));
+}
+
 UNITTEST
 {
     /* The vt parser forwards the APC string, byte for byte. */
@@ -1089,7 +1097,8 @@ UNITTEST
 
     char buf[64];
     static const char expected[] = "\x1b_Gi=31;OK\x1b\\";
-    const size_t n = kitty_format_reply(buf, sizeof(buf), &cmd, KITTY_IMAGE_ID(31), "OK");
+    const size_t n = kitty_format_reply(
+        buf, sizeof(buf), &cmd, KITTY_IMAGE_ID(31), "OK");
     xassert(n == sizeof(expected) - 1);
     xassert(memcmp(buf, expected, n) == 0);
 }
@@ -1113,8 +1122,7 @@ UNITTEST
     vt_from_slave(&term, (const uint8_t *)chunk3, sizeof(chunk3) - 1);
     xassert(!term.kitty->chunk.active);
 
-    struct kitty_image *img =
-        kitty_image_store_find_id(&term.kitty->screens[0].image_store, KITTY_IMAGE_ID(1));
+    struct kitty_image *img = test_screen_image(&term, 0, 1);
     xassert(img != NULL);
     xassert(img->width == 2 && img->height == 2);
     xassert(img->data[0] == 0xff000000u);
@@ -1142,7 +1150,7 @@ UNITTEST
     xassert(!term.kitty->chunk.active);
 
     /* The delete command also ran. */
-    xassert(kitty_image_store_find_id(&term.kitty->screens[0].image_store, KITTY_IMAGE_ID(9)) == NULL);
+    xassert(test_screen_image(&term, 0, 9) == NULL);
 
     /* The partial data is discarded. */
     xassert(tll_length(term.kitty->screens[0].image_store.images) == 0);
@@ -1151,7 +1159,7 @@ UNITTEST
     static const char done[] =
         "\x1b_Ga=t,i=8,f=24,s=1,v=1;AAAA\x1b\\";
     vt_from_slave(&term, (const uint8_t *)done, sizeof(done) - 1);
-    xassert(kitty_image_store_find_id(&term.kitty->screens[0].image_store, KITTY_IMAGE_ID(8)) != NULL);
+    xassert(test_screen_image(&term, 0, 8) != NULL);
 
     kitty_fini(&term);
 }
@@ -1198,8 +1206,7 @@ UNITTEST
     vt_from_slave(&term, (const uint8_t *)chunk3, sizeof(chunk3) - 1);
     xassert(!term.kitty->chunk.active);
 
-    struct kitty_image *img =
-        kitty_image_store_find_id(&term.kitty->screens[0].image_store, KITTY_IMAGE_ID(1));
+    struct kitty_image *img = test_screen_image(&term, 0, 1);
     xassert(img != NULL);
     xassert(img->width == 2 && img->height == 2);
     xassert(img->data[0] == 0xff000000u);
@@ -1244,8 +1251,7 @@ UNITTEST
     vt_from_slave(&term, (const uint8_t *)chunk3, sizeof(chunk3) - 1);
     xassert(!term.kitty->chunk.active);
 
-    struct kitty_image *img =
-        kitty_image_store_find_id(&term.kitty->screens[0].image_store, KITTY_IMAGE_ID(2));
+    struct kitty_image *img = test_screen_image(&term, 0, 2);
     xassert(img != NULL);
     xassert(img->width == 2 && img->height == 2);
 
@@ -1270,24 +1276,19 @@ UNITTEST
     /* Image 1 and image 2 on the main screen. */
     vt_from_slave(&term, (const uint8_t *)img, sizeof(img) - 1);
     vt_from_slave(&term, (const uint8_t *)img2, sizeof(img2) - 1);
-    xassert(kitty_image_store_find_id(
-                &term.kitty->screens[0].image_store, KITTY_IMAGE_ID(1)) != NULL);
-    xassert(kitty_image_store_find_id(
-                &term.kitty->screens[0].image_store, KITTY_IMAGE_ID(2)) != NULL);
+    xassert(test_screen_image(&term, 0, 1) != NULL);
+    xassert(test_screen_image(&term, 0, 2) != NULL);
 
     /* Image 1 on the alternate screen too (same id, separate store). */
     term.grid = &term.alt;
     vt_from_slave(&term, (const uint8_t *)img, sizeof(img) - 1);
-    xassert(kitty_image_store_find_id(
-                &term.kitty->screens[1].image_store, KITTY_IMAGE_ID(1)) != NULL);
+    xassert(test_screen_image(&term, 1, 1) != NULL);
 
     kitty_alt_screen_clear(&term);
 
     xassert(tll_length(term.kitty->screens[1].image_store.images) == 0);
-    xassert(kitty_image_store_find_id(
-                &term.kitty->screens[0].image_store, KITTY_IMAGE_ID(1)) != NULL);
-    xassert(kitty_image_store_find_id(
-                &term.kitty->screens[0].image_store, KITTY_IMAGE_ID(2)) != NULL);
+    xassert(test_screen_image(&term, 0, 1) != NULL);
+    xassert(test_screen_image(&term, 0, 2) != NULL);
 
     kitty_fini(&term);
 }
@@ -1364,8 +1365,7 @@ UNITTEST
     static const char img[] =
         "\x1b_Ga=t,i=1,f=24,s=1,v=1;AAAA\x1b\\";
     vt_from_slave(&term, (const uint8_t *)img, sizeof(img) - 1);
-    xassert(kitty_image_store_find_id(
-                &term.kitty->screens[1].image_store, KITTY_IMAGE_ID(1)) != NULL);
+    xassert(test_screen_image(&term, 1, 1) != NULL);
 
     term_reset(&term, false);
 

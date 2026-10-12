@@ -638,6 +638,9 @@ kitty_render_placeholder(
     return true;
 }
 
+#if defined(_DEBUG)
+#include "kitty-test.h"
+
 /*
  * Test helpers. A placeholder cell with combining characters is stored
  * as a composed entry, exactly as the VT parser builds it.
@@ -862,43 +865,31 @@ UNITTEST
  * Hook B: a row or column index outside the virtual placement shows
  * nothing; an in-range index draws the matching image slice.
  */
-#define PLACEHOLDER_TERM(t) do {                                        \
-        memset(&(t), 0, sizeof(t));                                     \
-        (t).ptmx = -1;                                                  \
-        (t).rows = 2;                                                   \
-        (t).cols = 2;                                                   \
-        (t).cell_width = 4;                                             \
-        (t).cell_height = 4;                                            \
-        (t).width = 8;                                                  \
-        (t).height = 8;                                                 \
-        (t).normal.num_rows = 4;                                        \
-        (t).normal.rows = xcalloc(4, sizeof((t).normal.rows[0]));       \
-        (t).grid = &(t).normal;                                         \
-        (t).selection.coords.end.row = -1;                              \
-        kitty_init(&(t));                                               \
-    } while (0)
+/* The stub terminal of the tests below: 2 x 2 cells of 4 x 4 pixels. */
+#define PLACEHOLDER_TERM(t) KITTY_TEST_TERM(t, 2, 2, 4, 4, 4)
+
+/* Store an opaque red 4x4 image, with its pixman image. */
+static void
+test_add_red_image(struct terminal *term, uint32_t id)
+{
+    uint32_t *src = xcalloc(16, sizeof(src[0]));
+    for (int i = 0; i < 16; i++)
+        src[i] = 0xffff0000u;
+
+    struct kitty_image image = {
+        .id = KITTY_IMAGE_ID(id), .width = 4, .height = 4,
+        .data = src, .size = 16 * sizeof(src[0]),
+        .pix = pixman_image_create_bits(PIXMAN_a8r8g8b8, 4, 4, src, 16),
+    };
+    xassert(kitty_image_store_add(kitty_image_store_for(term), &image));
+}
 
 UNITTEST
 {
     struct terminal term;
     PLACEHOLDER_TERM(term);
 
-    /* A 4x4 opaque red image. */
-    uint32_t *src = xcalloc(16, sizeof(src[0]));
-    for (int i = 0; i < 16; i++)
-        src[i] = 0xffff0000u;
-    pixman_image_t *src_pix = pixman_image_create_bits(
-        PIXMAN_a8r8g8b8, 4, 4, src, 16);
-
-    struct kitty_image proto = {
-        .id = KITTY_IMAGE_ID(42),
-        .width = 4,
-        .height = 4,
-        .data = src,
-        .size = 16 * sizeof(src[0]),
-        .pix = src_pix,
-    };
-    xassert(kitty_image_store_add(kitty_image_store_for(&term), &proto));
+    test_add_red_image(&term, 42);
 
     /* A 2x2 cell virtual placement of image 42. */
     struct kitty_command put;
@@ -908,10 +899,7 @@ UNITTEST
     put.cols = kitty_some_u32(1);
     put.rows = kitty_some_u32(1);
     put.unicode_placeholder = kitty_some_u32(1);
-    xassert(kitty_placement_put(
-                &term, &put,
-                kitty_image_store_find_id(
-                    kitty_image_store_for(&term), KITTY_IMAGE_ID(42))) == NULL);
+    kitty_test_put(&term, &put);
 
     kitty_render_prepass(&term);
 
@@ -962,8 +950,7 @@ UNITTEST
     free(dst);
 
     composed_free(term.composed);
-    kitty_fini(&term);
-    free(term.normal.rows);
+    KITTY_TEST_FINI(term);
 }
 
 UNITTEST
@@ -972,24 +959,13 @@ UNITTEST
     struct terminal term;
     PLACEHOLDER_TERM(term);
 
-    uint32_t *src = xcalloc(16, sizeof(src[0]));
-    for (int i = 0; i < 16; i++)
-        src[i] = 0xffff0000u;
-    struct kitty_image proto = {
-        .id = KITTY_IMAGE_ID(42), .width = 4, .height = 4,
-        .data = src, .size = 16 * sizeof(src[0]),
-        .pix = pixman_image_create_bits(PIXMAN_a8r8g8b8, 4, 4, src, 16),
-    };
-    xassert(kitty_image_store_add(kitty_image_store_for(&term), &proto));
+    test_add_red_image(&term, 42);
 
     struct kitty_command put;
     kitty_command_init(&put);
     put.action = KITTY_ACTION_PUT;
     put.id = kitty_some_u32(42);
-    xassert(kitty_placement_put(
-                &term, &put,
-                kitty_image_store_find_id(
-                    kitty_image_store_for(&term), KITTY_IMAGE_ID(42))) == NULL);
+    kitty_test_put(&term, &put);
 
     const struct kitty_placement *p =
         &tll_front(kitty_placement_store_for(&term)->placements);
@@ -1002,6 +978,7 @@ UNITTEST
     xassert(p->cols == 1 && p->rows == 1);
     xassert(p->cache_w == 8 && p->cache_h == 8);
 
-    kitty_fini(&term);
-    free(term.normal.rows);
+    KITTY_TEST_FINI(term);
 }
+
+#endif /* defined(_DEBUG) */

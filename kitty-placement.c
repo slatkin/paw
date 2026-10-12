@@ -951,91 +951,11 @@ kitty_scroll_down(struct terminal *term, struct scroll_region region, int rows)
     }
 }
 
-/*
- * Scroll test helpers. They mirror what term_scroll_partial() and
- * term_scroll_reverse_partial() do around the hook: the hook runs
- * first, then the offset (and, when the view follows, the view) is
- * updated.
- */
-#define SCROLL_TERM(t) do {                                             \
-        memset(&(t), 0, sizeof(t));                                     \
-        (t).ptmx = -1;                                                  \
-        (t).rows = 4;                                                   \
-        (t).cols = 8;                                                   \
-        (t).cell_width = 8;                                             \
-        (t).cell_height = 16;                                           \
-        (t).normal.num_rows = 8;                                        \
-        (t).normal.rows = xcalloc(8, sizeof((t).normal.rows[0]));       \
-        (t).grid = &(t).normal;                                         \
-        (t).selection.coords.end.row = -1;                              \
-        kitty_init(&(t));                                               \
-    } while (0)
+#if defined(_DEBUG)
+#include "kitty-test.h"
 
-/* Allocate every ring row, for tests that run term_scroll(). */
-#define SCROLL_ALLOC_ROWS(t) do {                                       \
-        for (int _i = 0; _i < (t).normal.num_rows; _i++)                \
-            (t).normal.rows[_i] = grid_row_alloc((t).cols, true);       \
-    } while (0)
-
-#define SCROLL_PLACE(t, img_id, at_row, pcols, prows, pw, ph) do {      \
-        const size_t npix = (size_t)(pw) * (size_t)(ph);                \
-        uint32_t *px = xcalloc(npix, sizeof(px[0]));                    \
-        for (size_t _i = 0; _i < npix; _i++)                            \
-            px[_i] = 0xff000000u;                                       \
-        struct kitty_image proto = {                                    \
-            .id = KITTY_IMAGE_ID(img_id), .width = (pw), .height = (ph),              \
-            .data = px, .size = npix * sizeof(px[0]),                   \
-        };                                                              \
-        xassert(kitty_image_store_add(                                  \
-                    kitty_image_store_for(&(t)), &proto));              \
-        (t).normal.cursor.point.row = (at_row);                         \
-        (t).normal.cursor.point.col = 0;                                \
-        struct kitty_command pc;                                        \
-        kitty_command_init(&pc);                                        \
-        pc.action = KITTY_ACTION_PUT;                                   \
-        pc.id = kitty_some_u32((img_id));                               \
-        pc.cols = kitty_some_u32((pcols));                              \
-        pc.rows = kitty_some_u32((prows));                              \
-        pc.cursor = kitty_some_u32(1);                                  \
-        xassert(kitty_placement_put(                                    \
-                    &(t), &pc,                                          \
-                    kitty_image_store_find_id(                          \
-                        kitty_image_store_for(&(t)),                    \
-                        KITTY_IMAGE_ID(img_id))) == NULL);              \
-    } while (0)
-
-#define SCROLL_COUNT(t) \
-    tll_length(kitty_placement_store_for(&(t))->placements)
-
-/* The one placement of image 'id', or NULL. */
-static inline struct kitty_placement *
-scroll_test_find(struct terminal *t, uint32_t id)
-{
-    tll_foreach(kitty_placement_store_for(t)->placements, it) {
-        if (it->item.image_id.v == id)
-            return &it->item;
-    }
-    return NULL;
-}
-
-#define SCROLL_DO_UP(t, reg_start, reg_end, amount) do {                \
-        kitty_scroll_up(&(t), (struct scroll_region){                   \
-                            .start = (reg_start), .end = (reg_end)},    \
-                        (amount));                                      \
-        (t).grid->offset =                                              \
-            ((t).grid->offset + (amount)) & ((t).grid->num_rows - 1);   \
-        (t).grid->view = (t).grid->offset;                              \
-    } while (0)
-
-#define SCROLL_DO_DOWN(t, reg_start, reg_end, amount) do {              \
-        kitty_scroll_down(&(t), (struct scroll_region){                 \
-                              .start = (reg_start), .end = (reg_end)},  \
-                          (amount));                                    \
-        (t).grid->offset =                                              \
-            ((t).grid->offset - (amount) + (t).grid->num_rows) &        \
-            ((t).grid->num_rows - 1);                                   \
-        (t).grid->view = (t).grid->offset;                              \
-    } while (0)
+/* The common stub terminal of the tests below: 4 rows of 8 columns. */
+#define PLACEMENT_TEST_TERM(t) KITTY_TEST_TERM(t, 4, 8, 8, 16, 8)
 
 UNITTEST
 {
@@ -1046,74 +966,71 @@ UNITTEST
      * oldest scrollback row.
      */
     struct terminal term;
-    SCROLL_TERM(term);
-    SCROLL_PLACE(term, 9, 1, 1, 1, 1, 1);
+    PLACEMENT_TEST_TERM(term);
+    kitty_test_place(&term, 9, 1, 1, 1, 1, 1);
 
-    struct kitty_placement *p = scroll_test_find(&term, 9);
+    struct kitty_placement *p = kitty_test_placement(&term, 9);
     xassert(p != NULL);
     const int abs_row = p->row;
 
-    int top;
-    xassert(kitty_placement_visible_top(&term, p, &top) && top == 1);
+    KITTY_TEST_EXPECT_TOP(term, 9, 1);
 
-    SCROLL_DO_UP(term, 0, 4, 1);
-    p = scroll_test_find(&term, 9);
+    KITTY_TEST_SCROLL_UP(term, 0, 4, 1);
+    p = kitty_test_placement(&term, 9);
     xassert(p != NULL && p->row == abs_row);
-    xassert(kitty_placement_visible_top(&term, p, &top) && top == 0);
+    KITTY_TEST_EXPECT_TOP(term, 9, 0);
 
     /* The user scrolls back one line: the image is next to its text
      * again, at its original screen row. */
     term.grid->view = (term.grid->view - 1 + term.grid->num_rows) &
         (term.grid->num_rows - 1);
-    xassert(kitty_placement_visible_top(&term, p, &top) && top == 1);
+    KITTY_TEST_EXPECT_TOP(term, 9, 1);
     term.grid->view = term.grid->offset;
 
     /* Four more scrolls keep it (scrollback holds 4 rows); the sixth
      * scroll in total destroys the anchor row. */
     for (int i = 0; i < 4; i++) {
-        SCROLL_DO_UP(term, 0, 4, 1);
-        xassert(SCROLL_COUNT(term) == 1);
+        KITTY_TEST_SCROLL_UP(term, 0, 4, 1);
+        xassert(kitty_test_count(&term) == 1);
     }
-    SCROLL_DO_UP(term, 0, 4, 1);
-    xassert(SCROLL_COUNT(term) == 0);
+    KITTY_TEST_SCROLL_UP(term, 0, 4, 1);
+    xassert(kitty_test_count(&term) == 0);
 
-    kitty_fini(&term);
-    free(term.normal.rows);
+    KITTY_TEST_FINI(term);
 }
 
 UNITTEST
 {
     /*
-     * Scroll up with a top and a bottom margin: anchors in the fixed
-     * margins follow the row swap and stay visually in place; anchors
-     * inside the region move up one row.
+     * Scroll up in a region (also what delete line does): anchors in
+     * the fixed margins follow the row swap and stay visually in
+     * place; anchors inside the region move up one row.
      */
-    struct terminal term;
-    SCROLL_TERM(term);
-    SCROLL_PLACE(term, 9, 0, 1, 1, 1, 1);  /* top margin */
-    SCROLL_PLACE(term, 10, 2, 1, 1, 1, 1); /* inside the region */
-    SCROLL_PLACE(term, 11, 3, 1, 1, 1, 1); /* bottom margin */
-    xassert(SCROLL_COUNT(term) == 3);
+    static const struct {
+        int start, end;
+        int count;
+        int at[3];  /* screen row of each placement, before */
+        int top[3]; /* screen row of each placement, after */
+    } cases[] = {
+        {1, 3, 3, {0, 2, 3}, {0, 1, 3}}, /* top and bottom margin */
+        {2, 4, 2, {3, 0}, {2, 0}},       /* bottom of the screen */
+    };
 
-    SCROLL_DO_UP(term, 1, 3, 1);
+    for (size_t c = 0; c < sizeof(cases) / sizeof(cases[0]); c++) {
+        struct terminal term;
+        PLACEMENT_TEST_TERM(term);
 
-    struct kitty_placement *p;
-    int top;
+        for (int i = 0; i < cases[c].count; i++)
+            kitty_test_place(&term, 9 + i, cases[c].at[i], 1, 1, 1, 1);
+        xassert(kitty_test_count(&term) == (size_t)cases[c].count);
 
-    p = scroll_test_find(&term, 9);
-    xassert(p != NULL);
-    xassert(kitty_placement_visible_top(&term, p, &top) && top == 0);
+        KITTY_TEST_SCROLL_UP(term, cases[c].start, cases[c].end, 1);
 
-    p = scroll_test_find(&term, 10);
-    xassert(p != NULL);
-    xassert(kitty_placement_visible_top(&term, p, &top) && top == 1);
+        for (int i = 0; i < cases[c].count; i++)
+            KITTY_TEST_EXPECT_TOP(term, 9 + i, cases[c].top[i]);
 
-    p = scroll_test_find(&term, 11);
-    xassert(p != NULL);
-    xassert(kitty_placement_visible_top(&term, p, &top) && top == 3);
-
-    kitty_fini(&term);
-    free(term.normal.rows);
+        KITTY_TEST_FINI(term);
+    }
 }
 
 UNITTEST
@@ -1124,27 +1041,26 @@ UNITTEST
      * row that stays inside the region keeps its ring row.
      */
     struct terminal term;
-    SCROLL_TERM(term);
-    SCROLL_PLACE(term, 9, 2, 1, 1, 1, 1); /* top row of the region */
-    SCROLL_PLACE(term, 10, 3, 1, 1, 1, 1);
+    PLACEMENT_TEST_TERM(term);
+    kitty_test_place(&term, 9, 2, 1, 1, 1, 1); /* top row of the region */
+    kitty_test_place(&term, 10, 3, 1, 1, 1, 1);
 
-    SCROLL_DO_UP(term, 2, 4, 1);
+    KITTY_TEST_SCROLL_UP(term, 2, 4, 1);
 
     /* Image 9 rotated into the scrollback, just above the screen. */
-    struct kitty_placement *p = scroll_test_find(&term, 9);
+    struct kitty_placement *p = kitty_test_placement(&term, 9);
     xassert(p != NULL);
     xassert(p->row == 0);
     int top;
     xassert(!kitty_placement_visible_top(&term, p, &top));
 
     /* Image 10 moved up one row inside the region. */
-    p = scroll_test_find(&term, 10);
+    p = kitty_test_placement(&term, 10);
     xassert(p != NULL);
     xassert(p->row == 3);
-    xassert(kitty_placement_visible_top(&term, p, &top) && top == 2);
+    KITTY_TEST_EXPECT_TOP(term, 10, 2);
 
-    kitty_fini(&term);
-    free(term.normal.rows);
+    KITTY_TEST_FINI(term);
 }
 
 UNITTEST
@@ -1154,26 +1070,26 @@ UNITTEST
      * ring rows, so a multi-row placement follows as a whole.
      */
     struct terminal term;
-    SCROLL_TERM(term);
-    SCROLL_PLACE(term, 9, 0, 1, 3, 1, 1); /* rows 0-2, bottom margin is row 3 */
+    PLACEMENT_TEST_TERM(term);
+    /* Rows 0-2, the bottom margin is row 3. */
+    kitty_test_place(&term, 9, 0, 1, 3, 1, 1);
 
-    SCROLL_DO_UP(term, 0, 3, 1);
+    KITTY_TEST_SCROLL_UP(term, 0, 3, 1);
 
-    struct kitty_placement *p = scroll_test_find(&term, 9);
+    struct kitty_placement *p = kitty_test_placement(&term, 9);
     xassert(p != NULL);
     xassert(p->rows == 3);
-    int top;
+
     /* The top row is one line above the viewport; two rows are still
      * visible. */
-    xassert(kitty_placement_visible_top(&term, p, &top) && top == -1);
+    KITTY_TEST_EXPECT_TOP(term, 9, -1);
 
     /* Scrolling back shows the whole image again. */
     term.grid->view = (term.grid->view - 1 + term.grid->num_rows) &
         (term.grid->num_rows - 1);
-    xassert(kitty_placement_visible_top(&term, p, &top) && top == 0);
+    KITTY_TEST_EXPECT_TOP(term, 9, 0);
 
-    kitty_fini(&term);
-    free(term.normal.rows);
+    KITTY_TEST_FINI(term);
 }
 
 UNITTEST
@@ -1185,68 +1101,35 @@ UNITTEST
      * and is deleted when the rotation would tear it.
      */
     struct terminal term;
-    SCROLL_TERM(term);
-    term.normal.num_rows = 16;
-    free(term.normal.rows);
-    term.normal.rows = xcalloc(16, sizeof(term.normal.rows[0]));
-    term.rows = 8;
-    term.selection.coords.end.row = -1;
+    KITTY_TEST_TERM(term, 8, 8, 8, 16, 16);
 
-    SCROLL_PLACE(term, 9, 2, 1, 2, 1, 1); /* rows 2-3: fully in the pushed band */
-    SCROLL_PLACE(term, 10, 3, 1, 3, 1, 3); /* rows 3-5: partly pushed */
-    SCROLL_PLACE(term, 11, 2, 1, 3, 1, 3); /* rows 2-4: partly pushed */
+    kitty_test_place(&term, 9, 2, 1, 2, 1, 1);  /* rows 2-3: fully pushed */
+    kitty_test_place(&term, 10, 3, 1, 3, 1, 3); /* rows 3-5: partly pushed */
+    kitty_test_place(&term, 11, 2, 1, 3, 1, 3); /* rows 2-4: partly pushed */
 
-    SCROLL_DO_UP(term, 2, 8, 2);
+    KITTY_TEST_SCROLL_UP(term, 2, 8, 2);
 
     /* Image 9 follows into the scrollback, contiguous. */
-    struct kitty_placement *p = scroll_test_find(&term, 9);
+    struct kitty_placement *p = kitty_test_placement(&term, 9);
     xassert(p != NULL);
     xassert(p->row == 0 && p->rows == 2);
 
     /* Image 10 follows its pushed anchor row (3 -> ring row 1), as a
      * rigid rectangle. */
-    p = scroll_test_find(&term, 10);
+    p = kitty_test_placement(&term, 10);
     xassert(p != NULL);
     xassert(p->rows == 3);
     xassert(p->src_h == 3);
     xassert(p->row == 1);
 
     /* Image 11 follows its pushed anchor row (2 -> ring row 0). */
-    p = scroll_test_find(&term, 11);
+    p = kitty_test_placement(&term, 11);
     xassert(p != NULL);
     xassert(p->rows == 3 && p->src_h == 3);
     xassert(p->row == 0);
-    xassert(SCROLL_COUNT(term) == 3);
+    xassert(kitty_test_count(&term) == 3);
 
-    kitty_fini(&term);
-    free(term.normal.rows);
-}
-
-UNITTEST
-{
-    /*
-     * Delete line (CSI M): term_scroll_partial() runs with the
-     * sub-region below the cursor. A placement inside the sub-region
-     * moves up; one above it stays.
-     */
-    struct terminal term;
-    SCROLL_TERM(term);
-    SCROLL_PLACE(term, 9, 3, 1, 1, 1, 1);
-    SCROLL_PLACE(term, 10, 0, 1, 1, 1, 1);
-
-    SCROLL_DO_UP(term, 2, 4, 1);
-
-    struct kitty_placement *p = scroll_test_find(&term, 9);
-    xassert(p != NULL);
-    int top;
-    xassert(kitty_placement_visible_top(&term, p, &top) && top == 2);
-
-    p = scroll_test_find(&term, 10);
-    xassert(p != NULL);
-    xassert(kitty_placement_visible_top(&term, p, &top) && top == 0);
-
-    kitty_fini(&term);
-    free(term.normal.rows);
+    KITTY_TEST_FINI(term);
 }
 
 UNITTEST
@@ -1259,34 +1142,21 @@ UNITTEST
      * destroyed.
      */
     struct terminal term;
-    SCROLL_TERM(term);
-    SCROLL_PLACE(term, 9, 1, 1, 1, 1, 1); /* inside the region */
-    SCROLL_PLACE(term, 10, 2, 1, 1, 1, 1); /* pushed below the region */
-    SCROLL_PLACE(term, 11, 0, 1, 1, 1, 1); /* top margin */
-    SCROLL_PLACE(term, 12, 3, 1, 1, 1, 1); /* bottom margin */
+    PLACEMENT_TEST_TERM(term);
+    kitty_test_place(&term, 9, 1, 1, 1, 1, 1);  /* inside the region */
+    kitty_test_place(&term, 10, 2, 1, 1, 1, 1); /* pushed below the region */
+    kitty_test_place(&term, 11, 0, 1, 1, 1, 1); /* top margin */
+    kitty_test_place(&term, 12, 3, 1, 1, 1, 1); /* bottom margin */
 
-    SCROLL_DO_DOWN(term, 1, 3, 1);
+    KITTY_TEST_SCROLL_DOWN(term, 1, 3, 1);
 
-    struct kitty_placement *p;
-    int top;
+    KITTY_TEST_EXPECT_TOP(term, 9, 2);
+    xassert(kitty_test_placement(&term, 10) == NULL);
+    KITTY_TEST_EXPECT_TOP(term, 11, 0);
+    KITTY_TEST_EXPECT_TOP(term, 12, 3);
+    xassert(kitty_test_count(&term) == 3);
 
-    p = scroll_test_find(&term, 9);
-    xassert(p != NULL);
-    xassert(kitty_placement_visible_top(&term, p, &top) && top == 2);
-
-    xassert(scroll_test_find(&term, 10) == NULL);
-
-    p = scroll_test_find(&term, 11);
-    xassert(p != NULL);
-    xassert(kitty_placement_visible_top(&term, p, &top) && top == 0);
-
-    p = scroll_test_find(&term, 12);
-    xassert(p != NULL);
-    xassert(kitty_placement_visible_top(&term, p, &top) && top == 3);
-    xassert(SCROLL_COUNT(term) == 3);
-
-    kitty_fini(&term);
-    free(term.normal.rows);
+    KITTY_TEST_FINI(term);
 }
 
 UNITTEST
@@ -1297,28 +1167,27 @@ UNITTEST
      * destroyed rows is clipped.
      */
     struct terminal term;
-    SCROLL_TERM(term);
-    SCROLL_PLACE(term, 9, 1, 1, 1, 1, 1);
-    SCROLL_PLACE(term, 10, 0, 1, 2, 1, 2);
+    PLACEMENT_TEST_TERM(term);
+    kitty_test_place(&term, 9, 1, 1, 1, 1, 1);
+    kitty_test_place(&term, 10, 0, 1, 2, 1, 2);
 
     /* Two scroll ups put image 9's anchor at scrollback row 3, and
      * image 10's anchor at row 2 with its body reaching into row 3. */
-    SCROLL_DO_UP(term, 0, 4, 1);
-    SCROLL_DO_UP(term, 0, 4, 1);
-    xassert(SCROLL_COUNT(term) == 2);
+    KITTY_TEST_SCROLL_UP(term, 0, 4, 1);
+    KITTY_TEST_SCROLL_UP(term, 0, 4, 1);
+    xassert(kitty_test_count(&term) == 2);
 
-    SCROLL_DO_DOWN(term, 0, 4, 1);
+    KITTY_TEST_SCROLL_DOWN(term, 0, 4, 1);
 
     /* The newest scrollback row (row 3) was destroyed: image 9 is
      * gone. Image 10 is a rigid overlay and keeps its rows; its
      * second row now draws over the row that reused the destroyed
      * ring row. */
-    xassert(scroll_test_find(&term, 9) == NULL);
-    struct kitty_placement *p = scroll_test_find(&term, 10);
+    xassert(kitty_test_placement(&term, 9) == NULL);
+    struct kitty_placement *p = kitty_test_placement(&term, 10);
     xassert(p != NULL && p->rows == 2);
 
-    kitty_fini(&term);
-    free(term.normal.rows);
+    KITTY_TEST_FINI(term);
 }
 
 UNITTEST
@@ -1329,47 +1198,30 @@ UNITTEST
      * the region's bottom row.
      */
     struct terminal term;
-    SCROLL_TERM(term);
-    SCROLL_ALLOC_ROWS(term);
+    PLACEMENT_TEST_TERM(term);
+    KITTY_TEST_ALLOC_ROWS(term);
     term.scroll_region.start = 0;
     term.scroll_region.end = 4;
 
-    uint32_t *px = xcalloc(4, sizeof(px[0]));
-    for (int i = 0; i < 4; i++)
-        px[i] = 0xff000000u;
-    struct kitty_image proto = {
-        .id = KITTY_IMAGE_ID(9), .width = 1, .height = 4,
-        .data = px, .size = 4 * sizeof(px[0]),
-    };
-    xassert(kitty_image_store_add(kitty_image_store_for(&term), &proto));
+    kitty_test_add_image(&term, 9, 1, 4);
     term.normal.cursor.point.row = 2;
     term.normal.cursor.point.col = 0;
-    struct kitty_command pc;
-    kitty_command_init(&pc);
-    pc.action = KITTY_ACTION_PUT;
-    pc.id = kitty_some_u32(9);
-    pc.cols = kitty_some_u32(1);
-    pc.rows = kitty_some_u32(4);
+
     /* C=0: the cursor move runs, and scrolls at the region bottom. */
-    xassert(kitty_placement_put(
-                &term, &pc,
-                kitty_image_store_find_id(kitty_image_store_for(&term), KITTY_IMAGE_ID(9)))
-            == NULL);
+    struct kitty_command put = kitty_test_put_command(9);
+    put.cols = kitty_some_u32(1);
+    put.rows = kitty_some_u32(4);
+    kitty_test_put(&term, &put);
 
     xassert(term.grid->cursor.point.row == 3);
     xassert(term.grid->offset == 2);
 
-    struct kitty_placement *p = scroll_test_find(&term, 9);
+    struct kitty_placement *p = kitty_test_placement(&term, 9);
     xassert(p != NULL);
-    int top;
-    xassert(kitty_placement_visible_top(&term, p, &top) && top == 0);
+    KITTY_TEST_EXPECT_TOP(term, 9, 0);
     xassert(p->rows == 4);
 
-    kitty_fini(&term);
-    tll_free(term.grid->scroll_damage);
-    for (int i = 0; i < term.normal.num_rows; i++)
-        grid_row_free(term.normal.rows[i]);
-    free(term.normal.rows);
+    KITTY_TEST_FINI(term);
 }
 
 UNITTEST
@@ -1380,27 +1232,24 @@ UNITTEST
      * with no placement are freed (kitty does this).
      */
     struct terminal term;
-    SCROLL_TERM(term);
+    PLACEMENT_TEST_TERM(term);
 
-    SCROLL_PLACE(term, 9, 0, 1, 1, 1, 1);  /* will scroll into history */
-    SCROLL_DO_UP(term, 0, 4, 1);           /* offset = 1; image 9 off screen */
+    kitty_test_place(&term, 9, 0, 1, 1, 1, 1);  /* will scroll into history */
+    KITTY_TEST_SCROLL_UP(term, 0, 4, 1);        /* image 9 is off screen */
+    kitty_test_place(&term, 10, 1, 1, 1, 1, 1); /* visible at screen row 1 */
 
-    SCROLL_PLACE(term, 10, 1, 1, 1, 1, 1); /* visible at screen row 1 */
-
-    xassert(SCROLL_COUNT(term) == 2);
-    xassert(kitty_image_store_find_id(kitty_image_store_for(&term), KITTY_IMAGE_ID(10)) != NULL);
+    xassert(kitty_test_count(&term) == 2);
+    xassert(kitty_test_image(&term, 10) != NULL);
 
     kitty_clear_visible(&term);
 
-    xassert(SCROLL_COUNT(term) == 1);
-    xassert(scroll_test_find(&term, 9) != NULL);
-    xassert(scroll_test_find(&term, 10) == NULL);
+    xassert(kitty_test_count(&term) == 1);
+    xassert(kitty_test_placement(&term, 9) != NULL);
+    xassert(kitty_test_placement(&term, 10) == NULL);
+    xassert(kitty_test_image(&term, 9) != NULL);
+    xassert(kitty_test_image(&term, 10) == NULL);
 
-    xassert(kitty_image_store_find_id(kitty_image_store_for(&term), KITTY_IMAGE_ID(9)) != NULL);
-    xassert(kitty_image_store_find_id(kitty_image_store_for(&term), KITTY_IMAGE_ID(10)) == NULL);
-
-    kitty_fini(&term);
-    free(term.normal.rows);
+    KITTY_TEST_FINI(term);
 }
 
 UNITTEST
@@ -1410,25 +1259,23 @@ UNITTEST
      * scrollback are dropped; the visible one stays.
      */
     struct terminal term;
-    SCROLL_TERM(term);
+    PLACEMENT_TEST_TERM(term);
 
-    SCROLL_PLACE(term, 9, 0, 1, 1, 1, 1);
-    SCROLL_DO_UP(term, 0, 4, 1);           /* image 9 in history */
+    kitty_test_place(&term, 9, 0, 1, 1, 1, 1);  /* will be in history */
+    KITTY_TEST_SCROLL_UP(term, 0, 4, 1);
+    kitty_test_place(&term, 10, 1, 1, 1, 1, 1); /* visible */
 
-    SCROLL_PLACE(term, 10, 1, 1, 1, 1, 1); /* visible */
-
-    xassert(SCROLL_COUNT(term) == 2);
+    xassert(kitty_test_count(&term) == 2);
 
     kitty_scrollback_clear(&term);
 
-    xassert(SCROLL_COUNT(term) == 1);
-    xassert(scroll_test_find(&term, 9) == NULL);
-    xassert(scroll_test_find(&term, 10) != NULL);
-    xassert(kitty_image_store_find_id(kitty_image_store_for(&term), KITTY_IMAGE_ID(9)) == NULL);
-    xassert(kitty_image_store_find_id(kitty_image_store_for(&term), KITTY_IMAGE_ID(10)) != NULL);
+    xassert(kitty_test_count(&term) == 1);
+    xassert(kitty_test_placement(&term, 9) == NULL);
+    xassert(kitty_test_placement(&term, 10) != NULL);
+    xassert(kitty_test_image(&term, 9) == NULL);
+    xassert(kitty_test_image(&term, 10) != NULL);
 
-    kitty_fini(&term);
-    free(term.normal.rows);
+    KITTY_TEST_FINI(term);
 }
 
 UNITTEST
@@ -1439,10 +1286,10 @@ UNITTEST
      * oldest line is deleted.
      */
     struct terminal term;
-    SCROLL_TERM(term);
+    PLACEMENT_TEST_TERM(term);
 
-    SCROLL_PLACE(term, 9, 1, 1, 1, 1, 1);
-    struct kitty_placement *p = scroll_test_find(&term, 9);
+    kitty_test_place(&term, 9, 1, 1, 1, 1, 1);
+    struct kitty_placement *p = kitty_test_placement(&term, 9);
     xassert(p != NULL);
     const int abs_row = p->row;
 
@@ -1450,7 +1297,7 @@ UNITTEST
         &term, kitty_placement_store_for(&term),
         term.normal.offset, term.normal.num_rows, term.rows, 1);
 
-    p = scroll_test_find(&term, 9);
+    p = kitty_test_placement(&term, 9);
     xassert(p != NULL);
     xassert(p->row == ((abs_row + 1) & (term.normal.num_rows - 1)));
 
@@ -1460,10 +1307,9 @@ UNITTEST
         term.normal.offset, term.normal.num_rows, term.rows,
         -term.normal.num_rows);
 
-    xassert(scroll_test_find(&term, 9) == NULL);
+    xassert(kitty_test_placement(&term, 9) == NULL);
 
-    kitty_fini(&term);
-    free(term.normal.rows);
+    KITTY_TEST_FINI(term);
 }
 
 UNITTEST
@@ -1473,10 +1319,10 @@ UNITTEST
      * only the scaled cache.
      */
     struct terminal term;
-    SCROLL_TERM(term);
+    PLACEMENT_TEST_TERM(term);
 
-    SCROLL_PLACE(term, 9, 1, 2, 3, 1, 1);
-    struct kitty_placement *p = scroll_test_find(&term, 9);
+    kitty_test_place(&term, 9, 1, 2, 3, 1, 1);
+    struct kitty_placement *p = kitty_test_placement(&term, 9);
     xassert(p != NULL);
     xassert(p->cols == 2 && p->rows == 3);
     const int row = p->row, col = p->col;
@@ -1485,14 +1331,13 @@ UNITTEST
     term.cell_height = 32;
     kitty_cell_size_changed(&term);
 
-    p = scroll_test_find(&term, 9);
+    p = kitty_test_placement(&term, 9);
     xassert(p != NULL);
     xassert(p->cols == 2 && p->rows == 3);
     xassert(p->row == row && p->col == col);
     xassert(p->cache_pix == NULL && p->cache_bytes == 0);
 
-    kitty_fini(&term);
-    free(term.normal.rows);
+    KITTY_TEST_FINI(term);
 }
 
 UNITTEST
@@ -1504,34 +1349,20 @@ UNITTEST
      * deletes it.
      */
     struct terminal term;
-    SCROLL_TERM(term);
+    PLACEMENT_TEST_TERM(term);
 
-    uint32_t *px = xcalloc(4, sizeof(px[0]));
-    for (int i = 0; i < 4; i++)
-        px[i] = 0xff000000u;
-    struct kitty_image proto = {
-        .id = KITTY_IMAGE_ID(7), .width = 2, .height = 2,
-        .data = px, .size = 4 * sizeof(px[0]),
-    };
-    xassert(kitty_image_store_add(kitty_image_store_for(&term), &proto));
+    kitty_test_add_image(&term, 7, 2, 2);
 
-    struct kitty_command put;
-    kitty_command_init(&put);
-    put.action = KITTY_ACTION_PUT;
-    put.id = kitty_some_u32(7);
+    struct kitty_command put = kitty_test_put_command(7);
     put.cols = kitty_some_u32(2);
     put.rows = kitty_some_u32(2);
     put.unicode_placeholder = kitty_some_u32(1);
 
     term.normal.cursor.point.row = 2;
     term.normal.cursor.point.col = 3;
+    kitty_test_put(&term, &put);
 
-    xassert(kitty_placement_put(
-                &term, &put,
-                kitty_image_store_find_id(
-                    kitty_image_store_for(&term), KITTY_IMAGE_ID(7))) == NULL);
-
-    struct kitty_placement *p = scroll_test_find(&term, 7);
+    struct kitty_placement *p = kitty_test_placement(&term, 7);
     xassert(p != NULL);
     xassert(p->virtual_placement);
     xassert(p->cols == 2 && p->rows == 2);
@@ -1541,7 +1372,7 @@ UNITTEST
     xassert(term.normal.cursor.point.col == 3);
 
     /* A normal placement, for contrast: d=a deletes it... */
-    SCROLL_PLACE(term, 8, 1, 1, 1, 1, 1);
+    kitty_test_place(&term, 8, 1, 1, 1, 1, 1);
 
     struct kitty_command del;
     kitty_command_init(&del);
@@ -1549,18 +1380,17 @@ UNITTEST
     del.delete_spec = 'a';
     kitty_placement_delete(&term, &del);
 
-    xassert(scroll_test_find(&term, 8) == NULL);
+    xassert(kitty_test_placement(&term, 8) == NULL);
     /* ...but keeps the virtual one. */
-    xassert(scroll_test_find(&term, 7) != NULL);
+    xassert(kitty_test_placement(&term, 7) != NULL);
 
     /* d=i deletes the virtual placement. */
     del.delete_spec = 'i';
     del.id = kitty_some_u32(7);
     kitty_placement_delete(&term, &del);
-    xassert(scroll_test_find(&term, 7) == NULL);
+    xassert(kitty_test_placement(&term, 7) == NULL);
 
-    kitty_fini(&term);
-    free(term.normal.rows);
+    KITTY_TEST_FINI(term);
 }
 
 UNITTEST
@@ -1571,35 +1401,22 @@ UNITTEST
      * alone.
      */
     struct terminal term;
-    SCROLL_TERM(term);
+    PLACEMENT_TEST_TERM(term);
 
-    uint32_t *px = xcalloc(1, sizeof(px[0]));
-    px[0] = 0xff000000u;
-    struct kitty_image proto = {
-        .id = KITTY_IMAGE_ID(7), .width = 1, .height = 1, .number = kitty_some_u32(5),
-        .data = px, .size = sizeof(px[0]),
-    };
-    xassert(kitty_image_store_add(kitty_image_store_for(&term), &proto));
+    kitty_test_add_image(&term, 7, 1, 1);
+    kitty_test_image(&term, 7)->number = kitty_some_u32(5);
 
-    struct kitty_command put;
-    kitty_command_init(&put);
-    put.action = KITTY_ACTION_PUT;
-    put.id = kitty_some_u32(7);
+    struct kitty_command put = kitty_test_put_command(7);
     put.unicode_placeholder = kitty_some_u32(1);
 
     struct kitty_command del;
-    kitty_command_init(&del);
-    del.action = KITTY_ACTION_DELETE;
 
     /* Selectors that do not match virtual placements. */
     static const char *const ignores[] = {"c", "p", "x", "y", "z"};
     for (size_t i = 0; i < sizeof(ignores) / sizeof(ignores[0]); i++) {
         term.normal.cursor.point.row = 2;
         term.normal.cursor.point.col = 3;
-        xassert(kitty_placement_put(
-                    &term, &put,
-                    kitty_image_store_find_id(
-                        kitty_image_store_for(&term), KITTY_IMAGE_ID(7))) == NULL);
+        kitty_test_put(&term, &put);
 
         kitty_command_init(&del);
         del.action = KITTY_ACTION_DELETE;
@@ -1609,7 +1426,7 @@ UNITTEST
         del.z = kitty_some_i32(0);
         kitty_placement_delete(&term, &del);
 
-        xassert(scroll_test_find(&term, 7) != NULL);
+        xassert(kitty_test_placement(&term, 7) != NULL);
     }
 
     /* d=r/R matches the image id range and deletes it. */
@@ -1619,25 +1436,21 @@ UNITTEST
     del.x = kitty_some_i32(1);
     del.y = kitty_some_i32(10);
     kitty_placement_delete(&term, &del);
-    xassert(scroll_test_find(&term, 7) == NULL);
+    xassert(kitty_test_placement(&term, 7) == NULL);
 
     /* d=n/N matches the newest image with number I. */
     term.normal.cursor.point.row = 1;
     term.normal.cursor.point.col = 1;
-    xassert(kitty_placement_put(
-                &term, &put,
-                kitty_image_store_find_id(
-                    kitty_image_store_for(&term), KITTY_IMAGE_ID(7))) == NULL);
+    kitty_test_put(&term, &put);
 
     kitty_command_init(&del);
     del.action = KITTY_ACTION_DELETE;
     del.delete_spec = 'n';
     del.number = kitty_some_u32(5);
     kitty_placement_delete(&term, &del);
-    xassert(scroll_test_find(&term, 7) == NULL);
+    xassert(kitty_test_placement(&term, 7) == NULL);
 
-    kitty_fini(&term);
-    free(term.normal.rows);
+    KITTY_TEST_FINI(term);
 }
 
 UNITTEST
@@ -1647,20 +1460,15 @@ UNITTEST
      * X or Y offset stays inside the cell.
      */
     struct terminal term;
-    SCROLL_TERM(term);
+    PLACEMENT_TEST_TERM(term);
 
-    SCROLL_PLACE(term, 9, 0, 1, 1, 1, 1);
-    struct kitty_image *image =
-        kitty_image_store_find_id(kitty_image_store_for(&term), KITTY_IMAGE_ID(9));
+    kitty_test_place(&term, 9, 0, 1, 1, 1, 1);
 
-    struct kitty_command put;
-    kitty_command_init(&put);
-    put.action = KITTY_ACTION_PUT;
-    put.id = kitty_some_u32(9);
+    struct kitty_command put = kitty_test_put_command(9);
     put.X = kitty_some_i32(100);
     put.Y = kitty_some_i32(-5);
-    xassert(kitty_placement_put(&term, &put, image) == NULL);
-    xassert(SCROLL_COUNT(term) == 2);
+    kitty_test_put(&term, &put);
+    xassert(kitty_test_count(&term) == 2);
 
     const struct kitty_placement *p = &tll_back(
         kitty_placement_store_for(&term)->placements);
@@ -1668,10 +1476,11 @@ UNITTEST
 
     /* The same non-zero pair replaces. */
     put.placement_id = kitty_some_u32(3);
-    xassert(kitty_placement_put(&term, &put, image) == NULL);
-    xassert(kitty_placement_put(&term, &put, image) == NULL);
-    xassert(SCROLL_COUNT(term) == 3);
+    kitty_test_put(&term, &put);
+    kitty_test_put(&term, &put);
+    xassert(kitty_test_count(&term) == 3);
 
-    kitty_fini(&term);
-    free(term.normal.rows);
+    KITTY_TEST_FINI(term);
 }
+
+#endif /* defined(_DEBUG) */
