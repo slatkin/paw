@@ -1340,3 +1340,51 @@ UNITTEST
 
     kitty_fini(&term);
 }
+
+UNITTEST
+{
+    /*
+     * DECSTR (soft reset) while on the alternate screen leaves the
+     * alternate grid. Its images and placements must not survive, or
+     * the next CSI ?1049h, which relies on the exit path having
+     * cleared them, would show them again (spec: Clear, alternate
+     * screen, and reset).
+     */
+    static struct config conf;
+    static struct wayland wl;
+
+    struct terminal term = {
+        .ptmx = -1,
+        .wl = &wl,
+        .rows = 0,
+        .cols = 0,
+        .grid = &term.alt,
+        .conf = &conf,
+        .selection = {
+            .coords = {
+                .start = {-1, -1},
+                .end = {-1, -1},
+            },
+            .auto_scroll = {
+                .fd = -1,
+            },
+        },
+    };
+    conf.locked_title = true;
+    term.window_title_has_been_set = true;
+
+    kitty_init(&term);
+
+    static const char img[] =
+        "\x1b_Ga=t,i=1,f=24,s=1,v=1;AAAA\x1b\\";
+    vt_from_slave(&term, (const uint8_t *)img, sizeof(img) - 1);
+    xassert(kitty_image_store_find_id(
+                &term.kitty->screens[1].image_store, 1) != NULL);
+
+    term_reset(&term, false);
+
+    xassert(term.grid == &term.normal);
+    xassert(tll_length(term.kitty->screens[1].image_store.images) == 0);
+
+    kitty_fini(&term);
+}
