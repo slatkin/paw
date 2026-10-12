@@ -770,15 +770,10 @@ kitty_handle_apc(struct terminal *term, const char *data, size_t len)
         return;
     }
 
-    /*
-     * A delete command cancels an in-progress chunked transfer
-     * (spec kitty-graphics-transmission: Chunked direct transfer).
-     */
-    if (kitty->chunk.active && cmd.action == KITTY_ACTION_DELETE) {
+    /* A delete command cancels an in-progress chunked transfer, then
+     * runs as usual. */
+    if (kitty->chunk.active && cmd.action == KITTY_ACTION_DELETE)
         kitty_chunk_reset(kitty);
-        kitty_reply(term, &cmd, cmd.has_id ? cmd.id : 0, true, "OK");
-        return;
-    }
 
     /*
      * Relative placements are not supported. This is a rejection:
@@ -1128,14 +1123,20 @@ UNITTEST
     term.ptmx = -1;
     kitty_init(&term);
 
+    static const char other[] =
+        "\x1b_Ga=t,i=9,f=24,s=1,v=1;AAAA\x1b\\";
     static const char start[] =
         "\x1b_Ga=t,i=7,f=24,s=2,v=2,m=1;AAAA\x1b\\";
-    static const char cancel[] = "\x1b_Ga=d\x1b\\";
+    static const char cancel[] = "\x1b_Ga=d,d=I,i=9\x1b\\";
 
+    vt_from_slave(&term, (const uint8_t *)other, sizeof(other) - 1);
     vt_from_slave(&term, (const uint8_t *)start, sizeof(start) - 1);
     xassert(term.kitty->chunk.active);
     vt_from_slave(&term, (const uint8_t *)cancel, sizeof(cancel) - 1);
     xassert(!term.kitty->chunk.active);
+
+    /* The delete command also ran. */
+    xassert(kitty_image_store_find_id(&term.kitty->screens[0].image_store, 9) == NULL);
 
     /* The partial data is discarded. */
     xassert(tll_length(term.kitty->screens[0].image_store.images) == 0);
