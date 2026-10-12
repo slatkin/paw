@@ -293,6 +293,7 @@ pgolib = static_library(
   'pgolib',
   'grid.c', 'grid.h',
   'kitty-graphics.c', 'kitty-graphics.h',
+  'kitty-diacritics.c', 'kitty-diacritics.h',
   'kitty-file.c', 'kitty-file.h',
   'kitty-image.c', 'kitty-image.h',
   'kitty-placement.c', 'kitty-placement.h',

@@ -1515,3 +1515,167 @@ UNITTEST
     kitty_fini(&term);
     free(term.normal.rows);
 }
+
+UNITTEST
+{
+    /*
+     * Virtual placement (U=1): a=p creates it for an image, without
+     * drawing anything by itself and without moving the cursor. It is
+     * not visible as a cell, so d=a (all visible) keeps it. d=i
+     * deletes it (spec kitty-graphics-placeholders: Virtual
+     * placements).
+     */
+    struct terminal term;
+    SCROLL_TERM(term);
+
+    uint32_t *px = xcalloc(4, sizeof(px[0]));
+    for (int i = 0; i < 4; i++)
+        px[i] = 0xff000000u;
+    struct kitty_image proto = {
+        .id = 7, .width = 2, .height = 2,
+        .data = px, .size = 4 * sizeof(px[0]),
+    };
+    xassert(kitty_image_store_add(kitty_image_store_for(&term), &proto));
+
+    struct kitty_command put;
+    kitty_command_init(&put);
+    put.action = KITTY_ACTION_PUT;
+    put.has_id = true;
+    put.id = 7;
+    put.has_cols = true;
+    put.cols = 2;
+    put.has_rows = true;
+    put.rows = 2;
+    put.has_unicode_placeholder = true;
+    put.unicode_placeholder = 1;
+
+    term.normal.cursor.point.row = 2;
+    term.normal.cursor.point.col = 3;
+
+    xassert(kitty_placement_put(
+                &term, &put,
+                kitty_image_store_find_id(
+                    kitty_image_store_for(&term), 7)) == NULL);
+
+    struct kitty_placement *p = scroll_test_find(&term, 7);
+    xassert(p != NULL);
+    xassert(p->virtual_placement);
+    xassert(p->cols == 2 && p->rows == 2);
+
+    /* U=1 leaves the cursor where it was. */
+    xassert(term.normal.cursor.point.row == 2);
+    xassert(term.normal.cursor.point.col == 3);
+
+    /* A normal placement, for contrast: d=a deletes it... */
+    SCROLL_PLACE(term, 8, 1, 1, 1, 1, 1);
+
+    struct kitty_command del;
+    kitty_command_init(&del);
+    del.action = KITTY_ACTION_DELETE;
+    del.has_delete = true;
+    del.delete_spec = 'a';
+    kitty_placement_delete(&term, &del);
+
+    xassert(scroll_test_find(&term, 8) == NULL);
+    /* ...but keeps the virtual one. */
+    xassert(scroll_test_find(&term, 7) != NULL);
+
+    /* d=i deletes the virtual placement. */
+    del.delete_spec = 'i';
+    del.has_id = true;
+    del.id = 7;
+    kitty_placement_delete(&term, &del);
+    xassert(scroll_test_find(&term, 7) == NULL);
+
+    kitty_fini(&term);
+    free(term.normal.rows);
+}
+
+UNITTEST
+{
+    /*
+     * The remaining virtual-placement delete rules (spec:
+     * Virtual placements): d=r/R and d=n/N delete a virtual
+     * placement; d=c, d=p, d=x, d=y and d=z leave it alone.
+     */
+    struct terminal term;
+    SCROLL_TERM(term);
+
+    uint32_t *px = xcalloc(1, sizeof(px[0]));
+    px[0] = 0xff000000u;
+    struct kitty_image proto = {
+        .id = 7, .width = 1, .height = 1, .has_number = true, .number = 5,
+        .data = px, .size = sizeof(px[0]),
+    };
+    xassert(kitty_image_store_add(kitty_image_store_for(&term), &proto));
+
+    struct kitty_command put;
+    kitty_command_init(&put);
+    put.action = KITTY_ACTION_PUT;
+    put.has_id = true;
+    put.id = 7;
+    put.has_unicode_placeholder = true;
+    put.unicode_placeholder = 1;
+
+    struct kitty_command del;
+    kitty_command_init(&del);
+    del.action = KITTY_ACTION_DELETE;
+    del.has_delete = true;
+
+    /* Selectors that do not match virtual placements. */
+    static const char *const ignores[] = {"c", "p", "x", "y", "z"};
+    for (size_t i = 0; i < sizeof(ignores) / sizeof(ignores[0]); i++) {
+        term.normal.cursor.point.row = 2;
+        term.normal.cursor.point.col = 3;
+        xassert(kitty_placement_put(
+                    &term, &put,
+                    kitty_image_store_find_id(
+                        kitty_image_store_for(&term), 7)) == NULL);
+
+        kitty_command_init(&del);
+        del.action = KITTY_ACTION_DELETE;
+        del.has_delete = true;
+        del.delete_spec = ignores[i][0];
+        del.has_x = true;
+        del.x = 3;
+        del.has_y = true;
+        del.y = 2;
+        del.has_z = true;
+        del.z = 0;
+        kitty_placement_delete(&term, &del);
+
+        xassert(scroll_test_find(&term, 7) != NULL);
+    }
+
+    /* d=r/R matches the image id range and deletes it. */
+    kitty_command_init(&del);
+    del.action = KITTY_ACTION_DELETE;
+    del.has_delete = true;
+    del.delete_spec = 'r';
+    del.has_x = true;
+    del.x = 1;
+    del.has_y = true;
+    del.y = 10;
+    kitty_placement_delete(&term, &del);
+    xassert(scroll_test_find(&term, 7) == NULL);
+
+    /* d=n/N matches the newest image with number I. */
+    term.normal.cursor.point.row = 1;
+    term.normal.cursor.point.col = 1;
+    xassert(kitty_placement_put(
+                &term, &put,
+                kitty_image_store_find_id(
+                    kitty_image_store_for(&term), 7)) == NULL);
+
+    kitty_command_init(&del);
+    del.action = KITTY_ACTION_DELETE;
+    del.has_delete = true;
+    del.delete_spec = 'n';
+    del.has_number = true;
+    del.number = 5;
+    kitty_placement_delete(&term, &del);
+    xassert(scroll_test_find(&term, 7) == NULL);
+
+    kitty_fini(&term);
+    free(term.normal.rows);
+}
