@@ -8,11 +8,13 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "composed.h"
 #include "debug.h"
 #include "grid.h"
 #include "kitty-graphics.h"
 #include "kitty-image.h"
 #include "kitty-placement.h"
+#include "kitty-render-internal.h"
 #include "terminal.h"
 #include "xmalloc.h"
 
@@ -165,3 +167,46 @@ kitty_test_place(
         xassert(kitty_placement_visible_top(&(t), _p, &_top));          \
         xassert(_top == (want));                                        \
     } while (0)
+
+/*
+ * A placeholder cell with combining characters is stored as a
+ * composed entry, exactly as the VT parser builds it.
+ */
+static inline char32_t
+kitty_test_placeholder_wc(
+    struct terminal *term, const char32_t *diacritics, int count)
+{
+    if (count == 0)
+        return KITTY_IMAGE_PLACEHOLDER_CHAR;
+
+    char32_t chars[4] = {KITTY_IMAGE_PLACEHOLDER_CHAR};
+    for (int i = 0; i < count; i++)
+        chars[i + 1] = diacritics[i];
+
+    const uint32_t key = composed_key_from_chars(
+        (const uint32_t *)chars, (size_t)count + 1);
+
+    if (composed_lookup(term->composed, key) == NULL) {
+        struct composed *cc = (struct composed *)xcalloc(1, sizeof(*cc));
+        cc->chars = (char32_t *)xcalloc(
+            (size_t)count + 1, sizeof(cc->chars[0]));
+        for (int i = 0; i <= count; i++)
+            cc->chars[i] = chars[i];
+        cc->count = (uint8_t)(count + 1);
+        cc->width = 1;
+        cc->key = key;
+        composed_insert(&term->composed, cc);
+    }
+
+    return CELL_COMB_CHARS_LO + key;
+}
+
+static inline void
+kitty_test_placeholder_cell(
+    struct cell *cell, char32_t wc, uint32_t fg_index)
+{
+    memset(cell, 0, sizeof(*cell));
+    cell->wc = wc;
+    cell->attrs.fg_src = COLOR_BASE256;
+    cell->attrs.fg = fg_index;
+}
