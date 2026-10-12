@@ -1,4 +1,4 @@
-project('foot', 'c',
+project('paw', 'c',
         version: '1.28.0',
         license: 'MIT',
         meson_version: '>=0.59.0',
@@ -316,7 +316,7 @@ if get_option('b_pgo') == 'generate'
 endif
 
 executable(
-  'foot',
+  'paw',
   'async.c', 'async.h',
   'box-drawing.c', 'box-drawing.h',
   'config.c', 'config.h',
@@ -350,7 +350,7 @@ executable(
   install: true)
 
 executable(
-  'footclient',
+  'pawclient',
   'client.c', 'client-protocol.h',
   'foot-features.c', 'foot-features.h',
   'macros.h',

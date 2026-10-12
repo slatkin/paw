@@ -16,8 +16,8 @@ rm -f "${blddir}"/pgo-ok
 cd "${blddir}"
 
 "${blddir}"/utils/xtgettcap
-"${blddir}"/footclient --version
-"${blddir}"/foot \
+"${blddir}"/pawclient --version
+"${blddir}"/paw \
            --config=/dev/null \
            --override tweak.grapheme-shaping=no \
            --term=xterm \

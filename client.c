@@ -76,8 +76,8 @@ print_usage(const char *prog_name)
     static const char options[] =
         "\nOptions:\n"
         "  -t,--term=TERM                           value to set the environment variable TERM to (" FOOT_DEFAULT_TERM ")\n"
-        "  -T,--title=TITLE                         initial window title (foot)\n"
-        "  -a,--app-id=ID                           window application ID (foot)\n"
+        "  -T,--title=TITLE                         initial window title (paw)\n"
+        "  -a,--app-id=ID                           window application ID (paw)\n"
         "     --toplevel-tag=TAG                    set a custom toplevel tag\n"
         "  -w,--window-size-pixels=WIDTHxHEIGHT     initial width and height, in pixels\n"
         "  -W,--window-size-chars=WIDTHxHEIGHT      initial width and height, in characters\n"
@@ -85,11 +85,11 @@ print_usage(const char *prog_name)
         "  -F,--fullscreen                          start in fullscreen mode\n"
         "  -L,--login-shell                         start shell as a login shell\n"
         "  -D,--working-directory=DIR               directory to start in (CWD)\n"
-        "  -s,--server-socket=PATH                  path to the server UNIX domain socket (default=$XDG_RUNTIME_DIR/foot-$WAYLAND_DISPLAY.sock)\n"
+        "  -s,--server-socket=PATH                  path to the server UNIX domain socket (default=$XDG_RUNTIME_DIR/paw-$WAYLAND_DISPLAY.sock)\n"
         "  -H,--hold                                remain open after child process exits\n"
         "  -N,--no-wait                             detach the client process from the running terminal, exiting immediately\n"
         "  -o,--override=[section.]key=value        override configuration option\n"
-        "  -E, --client-environment                 exec shell using footclient's environment, instead of the server's\n"
+        "  -E, --client-environment                 exec shell using pawclient's environment, instead of the server's\n"
         "  -d,--log-level={info|warning|error|none} log level (warning)\n"
         "  -l,--log-colorize=[{never|always|auto}]  enable/disable colorization of log output on stderr\n"
         "  -v,--version                             show the version number and quit\n"
@@ -357,7 +357,7 @@ main(int argc, char *const *argv)
             break;
 
         case 'v':
-            print_version_and_features("footclient ");
+            print_version_and_features("pawclient ");
             ret = EXIT_SUCCESS;
             goto err;
 
