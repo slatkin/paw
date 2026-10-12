@@ -97,6 +97,8 @@ struct kitty_command {
 void kitty_init(struct terminal *term);
 void kitty_fini(struct terminal *term);
 
+void kitty_command_init(struct kitty_command *cmd);
+
 void kitty_scroll_up(
     struct terminal *term, struct scroll_region region, int rows);
 void kitty_scroll_down(

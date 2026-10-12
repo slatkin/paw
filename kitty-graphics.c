@@ -4,6 +4,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "kitty-image.h"
+
 #define LOG_MODULE "kitty-graphics"
 #define LOG_ENABLE_DBG 0
 #include "log.h"
@@ -31,9 +33,25 @@ struct kitty_graphics {
         size_t size;
         bool overflow; /* command exceeded KITTY_APC_MAX; drop it */
     } apc;
+
+    /* One image store per screen buffer (design D3). */
+    struct kitty_image_store screens[2];
 };
 
-static void
+static struct kitty_image_store *
+kitty_image_store_for(struct terminal *term)
+{
+    /*
+     * The main and alternate screens have separate stores. The grid
+     * addresses are stable: the interactive-resize code replaces the
+     * contents of term->normal, not its address.
+     */
+    return term->grid == &term->alt
+        ? &term->kitty->screens[1]
+        : &term->kitty->screens[0];
+}
+
+void
 kitty_command_init(struct kitty_command *cmd)
 {
     memset(cmd, 0, sizeof(*cmd));
@@ -49,6 +67,8 @@ kitty_init(struct terminal *term)
     xassert(term->kitty == NULL);
     term->kitty = xcalloc(1, sizeof(struct kitty_graphics));
     term->kitty->term = term;
+    kitty_image_store_init(&term->kitty->screens[0]);
+    kitty_image_store_init(&term->kitty->screens[1]);
 }
 
 void
@@ -57,6 +77,8 @@ kitty_fini(struct terminal *term)
     if (term->kitty == NULL)
         return;
 
+    kitty_image_store_fini(&term->kitty->screens[0]);
+    kitty_image_store_fini(&term->kitty->screens[1]);
     free(term->kitty->apc.data);
     free(term->kitty);
     term->kitty = NULL;
@@ -377,36 +399,6 @@ kitty_parse_apc(const char *data, size_t len, struct kitty_command *cmd,
     return parse_control_data(ctrl, ctrl_len, cmd);
 }
 
-static bool
-base64_decoded_len(const char *data, size_t len, size_t *out)
-{
-    if (len % 4 != 0)
-        return false;
-
-    size_t padding = 0;
-    if (len > 0 && data[len - 1] == '=')
-        padding++;
-    if (len > 1 && data[len - 2] == '=')
-        padding++;
-
-    for (size_t i = 0; i < len; i++) {
-        const unsigned char c = data[i];
-        if (c == '=') {
-            if (i < len - padding)
-                return false;
-        } else if (!(('A' <= c && c <= 'Z') ||
-                     ('a' <= c && c <= 'z') ||
-                     ('0' <= c && c <= '9') ||
-                     c == '+' || c == '/'))
-        {
-            return false;
-        }
-    }
-
-    *out = len / 4 * 3 - padding;
-    return true;
-}
-
 static size_t
 kitty_format_reply(char *buf, size_t size, const struct kitty_command *cmd,
                    uint32_t id, const char *msg)
@@ -441,49 +433,69 @@ kitty_reply(struct terminal *term, const struct kitty_command *cmd,
     term_to_slave(term, buf, n);
 }
 
-/*
- * Load and check the image data as a transmit would, without storing
- * it. Only direct RGB and RGBA data is supported here; PNG and zlib
- * are handled by kitty-image.c.
- */
-static bool
-kitty_query(const struct kitty_command *cmd,
-            const char *payload, size_t payload_len, const char **error)
+static void
+kitty_handle_transmit(struct terminal *term, const struct kitty_command *cmd,
+                      const char *payload, size_t payload_len)
 {
-    if (cmd->compression != KITTY_COMPRESSION_NONE) {
-        *error = "EINVAL:compression not supported";
-        return false;
+    if (cmd->medium != KITTY_MEDIUM_DIRECT) {
+        kitty_reply(
+            term, cmd, cmd->has_id ? cmd->id : 0, false,
+            "EINVAL:unsupported transmission medium");
+        return;
     }
+
+    struct kitty_image_store *store = kitty_image_store_for(term);
+
+    const uint32_t id = cmd->has_id
+        ? cmd->id
+        : kitty_image_store_alloc_id(store);
+
+    struct kitty_image image;
+    const char *error = NULL;
+    if (!kitty_image_decode(
+            cmd, payload, payload_len, KITTY_IMAGE_QUOTA, &image, &error))
+    {
+        kitty_reply(term, cmd, id, false, error);
+        return;
+    }
+
+    image.id = id;
+    image.has_number = cmd->has_number;
+    image.number = cmd->number;
+    kitty_image_store_add(store, &image);
+
+    kitty_reply(term, cmd, id, true, "OK");
+}
+
+static void
+kitty_handle_query(struct terminal *term, const struct kitty_command *cmd,
+                   const char *payload, size_t payload_len)
+{
+    struct kitty_image_store *store = kitty_image_store_for(term);
+
+    /* An I-only query still names the id paw would have assigned. */
+    uint32_t id = 0;
+    if (cmd->has_id)
+        id = cmd->id;
+    else if (cmd->has_number)
+        id = kitty_image_store_alloc_id(store);
 
     if (cmd->medium != KITTY_MEDIUM_DIRECT) {
-        *error = "EINVAL:unsupported transmission medium";
-        return false;
+        kitty_reply(
+            term, cmd, id, false, "EINVAL:unsupported transmission medium");
+        return;
     }
 
-    if (cmd->format == KITTY_FORMAT_PNG) {
-        *error = "EINVAL:png not supported";
-        return false;
-    }
+    /* Load and check the image data as a transmit would, without
+     * storing it. */
+    struct kitty_image image;
+    const char *error = NULL;
+    const bool ok = kitty_image_decode(
+        cmd, payload, payload_len, KITTY_IMAGE_QUOTA, &image, &error);
+    if (ok)
+        kitty_image_destroy(&image);
 
-    if (!cmd->has_width || !cmd->has_height) {
-        *error = "EINVAL:missing dimensions";
-        return false;
-    }
-
-    size_t decoded_len;
-    if (!base64_decoded_len(payload, payload_len, &decoded_len)) {
-        *error = "EINVAL:invalid base64";
-        return false;
-    }
-
-    const size_t bpp = cmd->format == KITTY_FORMAT_RGB ? 3 : 4;
-    const uint64_t expected = (uint64_t)cmd->width * cmd->height * bpp;
-    if ((uint64_t)decoded_len != expected) {
-        *error = "EINVAL:wrong data length";
-        return false;
-    }
-
-    return true;
+    kitty_reply(term, cmd, id, ok, ok ? "OK" : error);
 }
 
 static void
@@ -507,21 +519,23 @@ kitty_handle_apc(struct terminal *term, const char *data, size_t len)
         return;
     }
 
-    if (cmd.action == KITTY_ACTION_QUERY) {
-        const char *error = NULL;
-        const bool ok = kitty_query(&cmd, payload, payload_len, &error);
+    switch (cmd.action) {
+    case KITTY_ACTION_TRANSMIT:
+    case KITTY_ACTION_TRANSMIT_AND_DISPLAY:
+        kitty_handle_transmit(term, &cmd, payload, payload_len);
+        return;
+
+    case KITTY_ACTION_QUERY:
+        kitty_handle_query(term, &cmd, payload, payload_len);
+        return;
+
+    default:
+        /* Put, delete and animation actions are added later. */
         kitty_reply(
-            term, &cmd, cmd.has_id ? cmd.id : 0, ok, ok ? "OK" : error);
+            term, &cmd, cmd.has_id ? cmd.id : 0, false,
+            "EINVAL:unsupported action");
         return;
     }
-
-    /*
-     * Transmit, put and delete are implemented in a later change.
-     * Animation actions are not supported.
-     */
-    kitty_reply(
-        term, &cmd, cmd.has_id ? cmd.id : 0, false,
-        "EINVAL:unsupported action");
 }
 
 void
@@ -711,8 +725,9 @@ UNITTEST
 
 UNITTEST
 {
-    /* a=q checks the direct RGB/RGBA data length. */
+    /* a=q accepts direct RGB data and rejects a wrong length. */
     struct kitty_command cmd;
+    struct kitty_image image;
 
     static const char rgb[] = "Gi=31,s=1,v=1,a=q,t=d,f=24;AAAA";
     kitty_command_init(&cmd);
@@ -721,8 +736,11 @@ UNITTEST
     xassert(kitty_parse_apc(
                 rgb, sizeof(rgb) - 1, &cmd, &payload, &payload_len));
     const char *error = NULL;
-    xassert(kitty_query(&cmd, payload, payload_len, &error));
+    xassert(kitty_image_decode(
+                &cmd, payload, payload_len, KITTY_IMAGE_QUOTA,
+                &image, &error));
     xassert(error == NULL);
+    kitty_image_destroy(&image);
 
     /* 1x1 RGBA needs 4 bytes, but only 3 are supplied. */
     static const char rgba[] = "Gi=31,s=1,v=1,a=q,f=32;AAAA";
@@ -730,8 +748,11 @@ UNITTEST
     xassert(kitty_parse_apc(
                 rgba, sizeof(rgba) - 1, &cmd, &payload, &payload_len));
     error = NULL;
-    xassert(!kitty_query(&cmd, payload, payload_len, &error));
+    xassert(!kitty_image_decode(
+                &cmd, payload, payload_len, KITTY_IMAGE_QUOTA,
+                &image, &error));
     xassert(error != NULL);
+    xassert(image.data == NULL);
 }
 
 UNITTEST
