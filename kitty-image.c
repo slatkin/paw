@@ -253,7 +253,7 @@ decode_png(
     image.version = PNG_IMAGE_VERSION;
 
     if (!png_image_begin_read_from_memory(&image, data, len)) {
-        *error = "EINVAL:invalid PNG";
+        *error = "EBADPNG:invalid PNG";
         return false;
     }
 
@@ -279,7 +279,7 @@ decode_png(
     if (!png_image_finish_read(&image, NULL, pixels, 0, NULL)) {
         free(pixels);
         png_image_free(&image);
-        *error = "EINVAL:invalid PNG";
+        *error = "EBADPNG:invalid PNG";
         return false;
     }
 
@@ -370,7 +370,7 @@ kitty_image_decode(
     if (png) {
         ok = decode_png(raw, raw_len, max_bytes, out, error);
     } else if (raw_len != raw_expected) {
-        *error = "EINVAL:wrong data length";
+        *error = "ENODATA:wrong data length";
     } else if (cmd->format == KITTY_FORMAT_RGB) {
         const size_t count = rgba_size / 4;
         out->data = xmalloc(rgba_size);
@@ -472,6 +472,7 @@ UNITTEST
                 &cmd, short_payload, sizeof(short_payload) - 1,
                 KITTY_IMAGE_QUOTA, &img, &error));
     xassert(error != NULL);
+    xassert(strcmp(error, "ENODATA:wrong data length") == 0);
     xassert(img.data == NULL);
 }
 
@@ -599,6 +600,7 @@ UNITTEST
                 &cmd, truncated, sizeof(truncated) - 1,
                 KITTY_IMAGE_QUOTA, &img, &error));
     xassert(error != NULL);
+    xassert(strcmp(error, "EBADPNG:invalid PNG") == 0);
     xassert(img.data == NULL);
 
     /* A PNG that claims 100000x100000 fails before allocation. */
