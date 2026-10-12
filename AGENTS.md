@@ -15,6 +15,8 @@ Install the dependencies listed in INSTALL.md. Install `tllist` 1.1.0 or later a
 
 Run `just check` for the usual checks. It configures and builds `bld/`, runs the tests, builds and tests with sanitizers in `bld/asan/`, runs clang-tidy on changed C files, and runs codespell. Run `just` to list the other recipes. Do not use valgrind on the CachyOS host used here. It fails at startup, because its glibc has no debug symbols that valgrind can read. Use the `asan` recipe for memory errors and leaks.
 
+`make` wraps the same recipes. `make dev` builds the debug tree in `bld/`, and `make release` builds the release tree in `bld/release/`. Run `make help` to list the targets.
+
 Build in `bld/`. This directory is git-ignored:
 
 ```sh

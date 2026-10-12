@@ -14,6 +14,11 @@ build:
     [ -f bld/build.ninja ] || meson setup bld --buildtype=debug
     ninja -C bld
 
+# Configure the release build on first use, then build it in bld/release/.
+release:
+    [ -f bld/release/build.ninja ] || meson setup bld/release --buildtype=release
+    ninja -C bld/release
+
 # Run the meson test suite.
 test: build
     meson test -C bld --print-errorlogs
