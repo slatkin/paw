@@ -33,6 +33,7 @@ The fast, lightweight and minimalistic Wayland terminal emulator.
 1. [Keypad](#keypad)
 1. [DPI and font size](#dpi-and-font-size)
 1. [Supported OSCs](#supported-oscs)
+1. [Kitty graphics](#kitty-graphics)
 1. [Programmatically checking if running in foot](#programmatically-checking-if-running-in-foot)
 1. [XTGETTCAP](#xtgettcap)
 1. [No AI / LLM policy](#no-ai-llm-policy)
@@ -125,6 +126,43 @@ git diff upstream/master -- '*.c' | grep -n '^+.*"foot'
 ```
 
 This prints nothing on a clean tree.
+
+
+### Kitty graphics hooks
+
+paw adds short calls to upstream files for the kitty graphics feature. After
+a merge, check that each call is still present and correct:
+
+| File | Function | Hook |
+| --- | --- | --- |
+| `csi.c` | `decset_decrst` | `kitty_alt_screen_clear()` |
+| `csi.c` | `csi_dispatch` | `kitty_clear_visible()` for ED 2 and ED 3 |
+| `render.c` | `render_cell` | `kitty_cell_is_placeholder()`, `kitty_render_underlay()`, `kitty_render_placeholder()` |
+| `render.c` | `grid_render` | `kitty_render_prepass()`, `kitty_render_overlay()` |
+| `render.c` | `delayed_reflow_of_normal_grid`, `render_resize` | `kitty_reflow_begin()`, `kitty_reflow_end()` |
+| `terminal.c` | `term_init`, `term_destroy` | `kitty_init()`, `kitty_fini()` |
+| `terminal.c` | `term_set_fonts` | `kitty_cell_size_changed()` |
+| `terminal.c` | `term_reset` | `kitty_alt_screen_clear()`, `kitty_reset()` |
+| `terminal.c` | `term_erase_scrollback` | `kitty_scrollback_clear()` |
+| `terminal.c` | `term_scroll_partial`, `term_scroll_reverse_partial` | `kitty_scroll_up()`, `kitty_scroll_down()` |
+| `vt.c` | `anywhere`, `state_escape_switch` | `kitty_apc_start()` |
+| `vt.c` | `state_apc_string_switch` | `kitty_apc_put()`, `kitty_apc_end()` |
+
+The command below lists these call sites, and the other `kitty_` symbols in
+upstream files:
+
+```sh
+grep -n 'kitty_' *.c | grep -v '^kitty-'
+```
+
+The other symbols belong to the upstream kitty keyboard protocol
+(`kitty_kbd`, `kitty_significant`, `kitty_keymap`, `kitty_search`,
+`kitty_kbd_protocol`), the kitty notification and text-size code in `osc.c`,
+and `verify_kitty_id_is_valid`. They need no fork action.
+
+`base64.c` now accepts unpadded base64 input, because clients such as
+`kitten` omit the `=` padding. The `kitty-*.c` files, `libpng`, and `zlib`
+are added to `meson.build`.
 
 
 ## Troubleshooting
@@ -597,6 +635,156 @@ with the terminal emulator itself. Foot implements the following OSCs:
 
 See the **foot-ctlseqs**(7) man page for a complete list of supported
 control sequences.
+
+
+## Kitty graphics
+
+paw implements a part of the [kitty graphics
+protocol](https://sw.kovidgoyal.net/kitty/graphics-protocol/). paw stores an
+image per screen buffer. The main and the alternate screen have separate
+stores.
+
+A graphics command is an APC string: `ESC _ G <control data> [; <base64
+payload>] ESC \`. The control data is a comma-separated list of `key=value`
+pairs. paw ignores an APC string that does not start with `G`. paw also
+ignores SOS and PM strings. The control data is limited to 1 KiB.
+
+### Supported keys
+
+| Key | Meaning |
+| --- | --- |
+| `a` | Action: `t` transmit, `T` transmit and display, `q` query, `p` put, `d` delete. The default is `t`. |
+| `f` | Pixel format: `24` (RGB), `32` (RGBA, the default), `100` (PNG). |
+| `t` | Medium: `d` direct (the default), `f` file, `t` temp file, `s` shared memory. |
+| `o` | Compression: `z` (zlib). No other value is accepted. |
+| `s`, `v` | Image width and height, in pixels. |
+| `i`, `I` | Image id, image number. A command cannot use both. |
+| `p` | Placement id. |
+| `c`, `r` | Placement size, in columns and rows. |
+| `x`, `y` | Source rectangle position. For `a=d`, the delete cell (1-based). |
+| `w`, `h` | Source rectangle size. |
+| `X`, `Y` | Pixel offset from the top-left of the cell. |
+| `z` | Z-index. |
+| `C` | Cursor movement: `0` move (the default), `1` do not move. |
+| `q` | Quiet mode: `1` suppresses `OK` replies, `2` suppresses all replies. |
+| `m` | More chunks: `1` more data follows, `0` last chunk. |
+| `d` | Delete selector. See below. |
+| `O`, `S` | File or shared memory byte offset and byte count. |
+| `U` | `1` creates a Unicode placeholder placement. |
+
+paw ignores unknown keys. An example is the usage hint `N=1`.
+
+The delete selectors are `a` (all visible, the default), `i` (image id), `n`
+(the newest image with number `I`), `r` (image ids `x` to `y`), `c` (at the
+cursor), `p` (at cell `x,y`), `q` (at cell `x,y` with z-index `z`), `x`
+(column `x`), `y` (row `y`), and `z` (z-index `z`). An uppercase selector
+also frees the image data when no placement of the image is left. The
+animation selector `d=f` changes nothing.
+
+paw replies to a command that has `i` or `I`. The reply is `ESC _ G
+i=<id>[,I=<number>][,p=<placement id>] ; <message> ESC \`. The message is
+`OK` on success. On failure the message is an error code and text, for
+example `ENOENT:no such image`. paw sends no reply when the command has
+neither `i` nor `I`.
+
+`a=q` loads and checks the image data. It stores nothing and replaces no
+image.
+
+### Not supported
+
+paw rejects these with an error reply (when a reply is due), and changes no
+state:
+
+* animation: `a=f` (frame), `a=a` (animate), `a=c` (compose);
+* relative placements: the `P` and `Q` keys;
+* a value of `a`, `f`, `o`, or `t` that is not in the table above.
+
+### Transmission
+
+* **Direct** (`t=d`, the default). The base64 payload carries the pixel data.
+  A command with `m=1` starts a chunked transfer. paw joins the payloads of
+  the following `m=1` commands and of the last `m=0` command into one image.
+  Only the first chunk carries the full control data. An `a=d` command
+  cancels the transfer.
+* **Compressed** (`o=z`). paw inflates the payload with zlib before it reads
+  the pixel format.
+* **PNG** (`f=100`). paw reads the size from the PNG data. For `f=24` and
+  `f=32`, `s` and `v` are required, and the data length must be exactly
+  `s * v * 3` or `s * v * 4` bytes.
+* **File** (`t=f`). The payload is a base64 file path.
+* **Temp file** (`t=t`). paw reads the file and then deletes it, under the
+  conditions below.
+* **Shared memory** (`t=s`). The payload is a base64 POSIX shared memory
+  name.
+
+### File-transfer security
+
+paw resolves symlinks first. Then it applies these rules to `t=f` and `t=t`:
+
+* paw reads regular files only.
+* paw refuses paths under `/proc`, `/sys`, and `/dev`, except paths under
+  `/dev/shm`.
+* paw checks the path before the open, opens it without blocking, and checks
+  again that the open file is a regular file. A named pipe cannot block paw.
+* paw deletes a `t=t` file only when the resolved path is inside `/tmp`,
+  `/dev/shm`, or `$TMPDIR`, and the path contains `tty-graphics-protocol`.
+  In every other case paw reads the file when the rules allow it, and keeps
+  it.
+
+For `t=s`, the name must start with `/`, contain no other `/`, and be no
+longer than `NAME_MAX`. paw unlinks the object after a valid name, also when
+the read or the decode fails. paw does not unlink the object when the name
+is invalid.
+
+Every file or shared memory failure gives the same reply:
+`EBADF:Failed to read image file`. paw writes the real reason to its log
+only.
+
+### Storage quota
+
+Each screen buffer stores at most 320 MB of decoded pixel data. When a new
+image would exceed the limit, paw deletes images that have no placement
+first, oldest first. Then paw deletes the oldest images that have a
+placement. An image larger than the limit fails, and paw deletes no other
+image.
+
+### Unicode placeholders
+
+With `U=1`, `a=p` and `a=T` create a virtual placement. A virtual placement
+draws nothing by itself and does not move the cursor. A cell whose base
+character is `U+10EEEE` then shows part of the image:
+
+* the foreground color gives the image id. It is the 8-bit index in 256-color
+  mode, and the 24-bit value in true-color mode;
+* a third diacritic gives the most significant byte of the id;
+* the underline color, when set, gives the placement id;
+* the first and second diacritics give the row and the column, through the
+  kitty `rowcolumn-diacritics` table.
+
+A cell with missing diacritics inherits the values from the placeholder cell
+to its left. This applies only when that cell has the same foreground and
+underline colors. paw scales the image to fit the `c` by `r` cell area,
+keeps the aspect ratio, and centers the image. Transparent pixels show the
+cell background. Placeholder cells scroll, reflow, enter the scrollback, and
+are erased like other text cells.
+
+### Screen state
+
+* Clear screen (`CSI 2 J`) deletes every placement that is visible on the
+  screen. `CSI 3 J` also deletes the placements in the scrollback. The image
+  data stays stored.
+* Entering the alternate screen deletes all placements and images of the
+  alternate screen. The main screen keeps its images.
+* A terminal reset (RIS) deletes every placement and image on both screens.
+* Scrolling moves placements with the text. paw deletes a placement whose top
+  row leaves the scrollback. In a scroll region, only placements fully inside
+  the region move. Parts that leave the region are clipped.
+* A font size change scales each placement, so that it covers the same
+  columns and rows. A window resize moves placements by the same number of
+  lines as the text near the cursor.
+
+This feature has no configuration. The `foot.ini` options and the
+**foot.ini**(5) man page are unchanged.
 
 
 ## Programmatically checking if running in foot
