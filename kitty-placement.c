@@ -354,8 +354,11 @@ kitty_placement_put(
 
     struct kitty_placement_store *store = kitty_placement_store_for(term);
 
-    if ((size_t)tll_length(store->placements) >= KITTY_MAX_PLACEMENTS)
+    if ((size_t)tll_length(store->placements) >= KITTY_MAX_PLACEMENTS) {
+        LOG_WARN("kitty graphics: placement limit (%d) reached",
+                 KITTY_MAX_PLACEMENTS);
         return "EINVAL:too many placements";
+    }
 
     /* Source rectangle: x, y, w, h with defaults, intersected with the
      * image. All arithmetic is in 64-bit to stay wrap-safe. */
@@ -400,8 +403,9 @@ kitty_placement_put(
         .placement_id = placement_id,
         .row = grid_row_absolute(term->grid, term->grid->cursor.point.row),
         .col = term->grid->cursor.point.col,
-        .X = cmd->has_X ? cmd->X : 0,
-        .Y = cmd->has_Y ? cmd->Y : 0,
+        /* The offset stays inside the anchor cell, as in kitty. */
+        .X = cmd->has_X ? max(0, min(cmd->X, term->cell_width - 1)) : 0,
+        .Y = cmd->has_Y ? max(0, min(cmd->Y, term->cell_height - 1)) : 0,
         .src_x = (int)sx0,
         .src_y = (int)sy0,
         .src_w = (int)sw,
@@ -409,15 +413,18 @@ kitty_placement_put(
         .cols = cols,
         .rows = rows,
         .scaled = scaled,
+        .cell_width = term->cell_width,
+        .cell_height = term->cell_height,
         .virtual_placement = virtual_placement,
         .z = cmd->has_z ? cmd->z : 0,
         .image = image,
     };
 
     /* Replace an existing placement with the same (image id, placement
-     * id) pair. */
+     * id) pair. A placement id of 0 never replaces. */
     tll_foreach(store->placements, it) {
-        if (it->item.image_id != p.image_id ||
+        if (p.placement_id == 0 ||
+            it->item.image_id != p.image_id ||
             it->item.placement_id != p.placement_id)
         {
             continue;
@@ -1640,6 +1647,46 @@ UNITTEST
     del.number = 5;
     kitty_placement_delete(&term, &del);
     xassert(scroll_test_find(&term, 7) == NULL);
+
+    kitty_fini(&term);
+    free(term.normal.rows);
+}
+
+UNITTEST
+{
+    /*
+     * A placement id of 0 never replaces another placement, and an
+     * X or Y offset stays inside the cell.
+     */
+    struct terminal term;
+    SCROLL_TERM(term);
+
+    SCROLL_PLACE(term, 9, 0, 1, 1, 1, 1);
+    struct kitty_image *image =
+        kitty_image_store_find_id(kitty_image_store_for(&term), 9);
+
+    struct kitty_command put;
+    kitty_command_init(&put);
+    put.action = KITTY_ACTION_PUT;
+    put.has_id = true;
+    put.id = 9;
+    put.has_X = true;
+    put.X = 100;
+    put.has_Y = true;
+    put.Y = -5;
+    xassert(kitty_placement_put(&term, &put, image) == NULL);
+    xassert(SCROLL_COUNT(term) == 2);
+
+    const struct kitty_placement *p = &tll_back(
+        kitty_placement_store_for(&term)->placements);
+    xassert(p->X == term.cell_width - 1 && p->Y == 0);
+
+    /* The same non-zero pair replaces. */
+    put.has_placement_id = true;
+    put.placement_id = 3;
+    xassert(kitty_placement_put(&term, &put, image) == NULL);
+    xassert(kitty_placement_put(&term, &put, image) == NULL);
+    xassert(SCROLL_COUNT(term) == 3);
 
     kitty_fini(&term);
     free(term.normal.rows);

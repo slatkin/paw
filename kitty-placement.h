@@ -29,7 +29,7 @@ enum {
     /*
      * Total budget for all scaled-image caches of one screen. A cache
      * that would exceed the remaining budget is not built; the
-     * placement is then simply not drawn.
+     * placement is then drawn from the source image without a cache.
      */
     KITTY_PLACEMENT_CACHE_QUOTA = 128u * 1024 * 1024,
 
@@ -61,6 +61,10 @@ struct kitty_placement {
     /* True if c and/or r was given: the image is scaled to the cell
      * box instead of keeping its pixel size. */
     bool scaled;
+
+    /* Cell size at creation. An unscaled placement keeps its pixel
+     * size only while the cell size is unchanged. */
+    int cell_width, cell_height;
 
     bool virtual_placement; /* U=1: drawn by the placeholder hook */
     int32_t z;
