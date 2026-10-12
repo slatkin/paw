@@ -663,7 +663,7 @@ ignores SOS and PM strings. The control data is limited to 1 KiB.
 | `c`, `r` | Placement size, in columns and rows. |
 | `x`, `y` | Source rectangle position. For `a=d`, the delete cell (1-based). |
 | `w`, `h` | Source rectangle size. |
-| `X`, `Y` | Pixel offset from the top-left of the cell. |
+| `X`, `Y` | Pixel offset from the top-left of the cell. paw limits it to the cell size minus 1. |
 | `z` | Z-index. |
 | `C` | Cursor movement: `0` move (the default), `1` do not move. |
 | `q` | Quiet mode: `1` suppresses `OK` replies, `2` suppresses all replies. |
@@ -709,7 +709,7 @@ state:
   A command with `m=1` starts a chunked transfer. paw joins the payloads of
   the following `m=1` commands and of the last `m=0` command into one image.
   Only the first chunk carries the full control data. An `a=d` command
-  cancels the transfer.
+  cancels the transfer, and then runs as a normal delete command.
 * **Compressed** (`o=z`). paw inflates the payload with zlib before it reads
   the pixel format.
 * **PNG** (`f=100`). paw reads the size from the PNG data. For `f=24` and
@@ -751,6 +751,17 @@ image would exceed the limit, paw deletes images that have no placement
 first, oldest first. Then paw deletes the oldest images that have a
 placement. An image larger than the limit fails, and paw deletes no other
 image.
+
+### Placement limits
+
+Each screen buffer holds at most 4096 placements. A command that would add
+more fails with `EINVAL:too many placements`, and paw writes a warning to its
+log.
+
+paw keeps a scaled copy of each placed image, for fast drawing. Each screen
+buffer uses at most 128 MB for these copies. When a copy would exceed the
+limit, paw does not keep it. It scales the image from the source pixels on
+each frame instead, which is slower but shows the same picture.
 
 ### Unicode placeholders
 
