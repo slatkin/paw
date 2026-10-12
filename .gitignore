@@ -3,3 +3,6 @@
 /src/
 /subprojects/*/
 /subprojects/.wraplock
+.claude/
+.pi/
+.zvec-grep/
