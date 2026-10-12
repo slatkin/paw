@@ -30,8 +30,8 @@ Test convention: foot runs `UNITTEST { ... }` blocks as constructors in debug bu
 
 ## 5. Placements and the overlay render
 
-- [ ] 5.1 Implement `kitty-placement.c`: create a placement at the cursor with `X,Y`, `x,y,w,h`, `c,r` fit, and the cell span. Replace a placement with the same `(i,p)`. Apply the cursor movement policy `C`. Mark covered rows dirty (design D5). Verify: unit checks for the span calculation with `c` only, `r` only, both, and neither, and for the cursor move.
-- [ ] 5.2 Implement hook C (`kitty_render_overlay` after `render_sixel_images`), the scaled-image cache pre-pass, and dirty marking of covered cells (design D6). Verify: live check `kitten icat <png with alpha>` shows the image with correct alpha, and repeated redraws (type in the shell under it) do not make it darker.
+- [x] 5.1 Implement `kitty-placement.c`: create a placement at the cursor with `X,Y`, `x,y,w,h`, `c,r` fit, and the cell span. Replace a placement with the same `(i,p)`. Apply the cursor movement policy `C`. Mark covered rows dirty (design D5). Verify: unit checks for the span calculation with `c` only, `r` only, both, and neither, and for the cursor move.
+- [x] 5.2 Implement hook C (`kitty_render_overlay` after `render_sixel_images`), the scaled-image cache pre-pass, and dirty marking of covered cells (design D6). Verify: live check `kitten icat <png with alpha>` shows the image with correct alpha, and repeated redraws (type in the shell under it) do not make it darker.
 - [ ] 5.3 Implement hook A (`kitty_render_underlay` after the background fill in `render_cell`), including the default-background rule for `z < -1073741824`. Verify: live check `kitten icat --z-index=-1 <img>`, then type text over it: the text is visible on the image. Repeat with `--z-index=--1` (kitten's syntax for -1073741825) on a line with a colored background (for example `printf '\e[41m     \e[0m'`): the red cells stay red.
 - [ ] 5.4 Implement `a=d` with all selectors in spec kitty-graphics-placement: Deletion, lowercase and uppercase. Verify: unit checks for each `d` value, and that `d=f` changes nothing. Live check: `kitten icat --clear` removes the images.
 
