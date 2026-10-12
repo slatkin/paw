@@ -677,9 +677,13 @@ paw ignores unknown keys. An example is the usage hint `N=1`.
 The delete selectors are `a` (all visible, the default), `i` (image id), `n`
 (the newest image with number `I`), `r` (image ids `x` to `y`), `c` (at the
 cursor), `p` (at cell `x,y`), `q` (at cell `x,y` with z-index `z`), `x`
-(column `x`), `y` (row `y`), and `z` (z-index `z`). An uppercase selector
-also frees the image data when no placement of the image is left. The
-animation selector `d=f` changes nothing.
+(column `x`), `y` (row `y`), and `z` (z-index `z`). Every selector has an
+uppercase form: `A`, `I`, `N`, `R`, `C`, `P`, `Q`, `X`, `Y`, `Z`. An
+uppercase selector also frees the image data of every image that is left
+with no placement. The selectors `i`/`I`, `n`/`N`, and `r`/`R` also delete
+virtual placements. The selectors `a`, `c`, `p`, `q`, `x`, `y`, and `z`
+do not affect virtual placements. The animation selector `d=f` changes
+nothing.
 
 paw replies to a command that has `i` or `I`. The reply is `ESC _ G
 i=<id>[,I=<number>][,p=<placement id>] ; <message> ESC \`. The message is
@@ -771,8 +775,9 @@ are erased like other text cells.
 ### Screen state
 
 * Clear screen (`CSI 2 J`) deletes every placement that is visible on the
-  screen. `CSI 3 J` also deletes the placements in the scrollback. The image
-  data stays stored.
+  screen. `CSI 3 J` also deletes the placements in the scrollback. In both
+  cases paw then frees every image that no placement refers to any more. A
+  later `a=p` for a freed image replies `ENOENT`.
 * Entering the alternate screen deletes all placements and images of the
   alternate screen. The main screen keeps its images.
 * A terminal reset (RIS) deletes every placement and image on both screens.
