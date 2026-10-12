@@ -87,14 +87,15 @@ expected_raw_size(const struct kitty_command *cmd, size_t *out)
 {
     if (cmd->format == KITTY_FORMAT_PNG ||
         cmd->compression != KITTY_COMPRESSION_NONE ||
-        !cmd->has_width || !cmd->has_height ||
-        cmd->width == 0 || cmd->height == 0)
+        !cmd->width.set || !cmd->height.set ||
+        cmd->width.value == 0 || cmd->height.value == 0)
     {
         return false;
     }
 
     const uint32_t bpp = cmd->format == KITTY_FORMAT_RGB ? 3 : 4;
-    return kitty_checked_size(cmd->width, cmd->height, bpp, SIZE_MAX, out);
+    return kitty_checked_size(
+        cmd->width.value, cmd->height.value, bpp, SIZE_MAX, out);
 }
 
 /*
@@ -108,8 +109,8 @@ compute_read_size(
     const struct kitty_command *cmd, uint64_t object_size, size_t max_bytes,
     uint64_t *want, bool *insufficient)
 {
-    const uint64_t offset = cmd->has_offset ? cmd->offset : 0;
-    const uint64_t size = cmd->has_size ? cmd->size : 0;
+    const uint64_t offset = kitty_or(cmd->offset, 0);
+    const uint64_t size = kitty_or(cmd->size, 0);
 
     /* Spec: a file shorter than O + S fails. */
     if (size > 0 && object_size < offset + size)
@@ -196,7 +197,7 @@ load_regular_file(
 
     buf = xmalloc(want > 0 ? (size_t)want : 1);
     size_t got = 0;
-    const uint64_t offset = cmd->has_offset ? cmd->offset : 0;
+    const uint64_t offset = kitty_or(cmd->offset, 0);
 
     while (got < want) {
         const ssize_t n = pread(
@@ -297,7 +298,7 @@ load_shm(
         if (page <= 0)
             page = 4096;
 
-        const uint64_t offset = cmd->has_offset ? cmd->offset : 0;
+        const uint64_t offset = kitty_or(cmd->offset, 0);
         const uint64_t page_start =
             offset - (offset % (uint64_t)page);
         const size_t delta = (size_t)(offset - page_start);
@@ -423,9 +424,8 @@ test_cmd_init(
     kitty_command_init(cmd);
     cmd->medium = medium;
     cmd->format = format;
-    cmd->has_width = cmd->has_height = true;
-    cmd->width = width;
-    cmd->height = height;
+    cmd->width = kitty_some_u32(width);
+    cmd->height = kitty_some_u32(height);
 }
 
 /* Create a unique file with the given contents. Returns the open fd or -1. */
@@ -472,8 +472,7 @@ UNITTEST
     xassert(fd >= 0);
     close(fd);
 
-    cmd.has_size = true;
-    cmd.size = 100;
+    cmd.size = kitty_some_u32(100);
     data = NULL;
     len = 0;
     error = NULL;

@@ -238,6 +238,24 @@ parse_i32(const char *s, size_t len, int32_t *out)
 }
 
 static bool
+parse_opt_u32(const char *s, size_t len, struct kitty_u32 *out)
+{
+    if (!parse_u32(s, len, &out->value))
+        return false;
+    out->set = true;
+    return true;
+}
+
+static bool
+parse_opt_i32(const char *s, size_t len, struct kitty_i32 *out)
+{
+    if (!parse_i32(s, len, &out->value))
+        return false;
+    out->set = true;
+    return true;
+}
+
+static bool
 parse_action(char c, enum kitty_action *out)
 {
     switch (c) {
@@ -328,142 +346,119 @@ parse_control_data(const char *data, size_t len, struct kitty_command *cmd)
             break;
 
         case 's':
-            if (!parse_u32(value, value_len, &cmd->width))
+            if (!parse_opt_u32(value, value_len, &cmd->width))
                 return false;
-            cmd->has_width = true;
             break;
 
         case 'v':
-            if (!parse_u32(value, value_len, &cmd->height))
+            if (!parse_opt_u32(value, value_len, &cmd->height))
                 return false;
-            cmd->has_height = true;
             break;
 
         case 'i':
-            if (!parse_u32(value, value_len, &cmd->id))
+            if (!parse_opt_u32(value, value_len, &cmd->id))
                 return false;
-            cmd->has_id = true;
             break;
 
         case 'I':
-            if (!parse_u32(value, value_len, &cmd->number))
+            if (!parse_opt_u32(value, value_len, &cmd->number))
                 return false;
-            cmd->has_number = true;
             break;
 
         case 'p':
-            if (!parse_u32(value, value_len, &cmd->placement_id))
+            if (!parse_opt_u32(value, value_len, &cmd->placement_id))
                 return false;
-            cmd->has_placement_id = true;
             break;
 
         case 'c':
-            if (!parse_u32(value, value_len, &cmd->cols))
+            if (!parse_opt_u32(value, value_len, &cmd->cols))
                 return false;
-            cmd->has_cols = true;
             break;
 
         case 'r':
-            if (!parse_u32(value, value_len, &cmd->rows))
+            if (!parse_opt_u32(value, value_len, &cmd->rows))
                 return false;
-            cmd->has_rows = true;
             break;
 
         case 'x':
-            if (!parse_i32(value, value_len, &cmd->x))
+            if (!parse_opt_i32(value, value_len, &cmd->x))
                 return false;
-            cmd->has_x = true;
             break;
 
         case 'y':
-            if (!parse_i32(value, value_len, &cmd->y))
+            if (!parse_opt_i32(value, value_len, &cmd->y))
                 return false;
-            cmd->has_y = true;
             break;
 
         case 'w':
-            if (!parse_u32(value, value_len, &cmd->w))
+            if (!parse_opt_u32(value, value_len, &cmd->w))
                 return false;
-            cmd->has_w = true;
             break;
 
         case 'h':
-            if (!parse_u32(value, value_len, &cmd->h))
+            if (!parse_opt_u32(value, value_len, &cmd->h))
                 return false;
-            cmd->has_h = true;
             break;
 
         case 'X':
-            if (!parse_i32(value, value_len, &cmd->X))
+            if (!parse_opt_i32(value, value_len, &cmd->X))
                 return false;
-            cmd->has_X = true;
             break;
 
         case 'Y':
-            if (!parse_i32(value, value_len, &cmd->Y))
+            if (!parse_opt_i32(value, value_len, &cmd->Y))
                 return false;
-            cmd->has_Y = true;
             break;
 
         case 'z':
-            if (!parse_i32(value, value_len, &cmd->z))
+            if (!parse_opt_i32(value, value_len, &cmd->z))
                 return false;
-            cmd->has_z = true;
             break;
 
         case 'C':
-            if (!parse_u32(value, value_len, &cmd->cursor))
+            if (!parse_opt_u32(value, value_len, &cmd->cursor))
                 return false;
-            cmd->has_cursor = true;
             break;
 
         case 'q':
-            if (!parse_u32(value, value_len, &cmd->quiet))
+            if (!parse_opt_u32(value, value_len, &cmd->quiet))
                 return false;
-            cmd->has_quiet = true;
             break;
 
         case 'm':
-            if (!parse_u32(value, value_len, &cmd->more))
+            if (!parse_opt_u32(value, value_len, &cmd->more))
                 return false;
-            cmd->has_more = true;
             break;
 
         case 'd':
             if (value_len != 1)
                 return false;
             cmd->delete_spec = value[0];
-            cmd->has_delete = true;
             break;
 
         case 'O':
-            if (!parse_u32(value, value_len, &cmd->offset))
+            if (!parse_opt_u32(value, value_len, &cmd->offset))
                 return false;
-            cmd->has_offset = true;
             break;
 
         case 'S':
-            if (!parse_u32(value, value_len, &cmd->size))
+            if (!parse_opt_u32(value, value_len, &cmd->size))
                 return false;
-            cmd->has_size = true;
             break;
 
         case 'U':
-            if (!parse_u32(value, value_len, &cmd->unicode_placeholder))
+            if (!parse_opt_u32(value, value_len, &cmd->unicode_placeholder))
                 return false;
-            cmd->has_unicode_placeholder = true;
             break;
 
         case 'P':
-            if (!parse_u32(value, value_len, &cmd->parent_id))
+            if (!parse_opt_u32(value, value_len, &cmd->parent_id))
                 return false;
-            cmd->has_parent_id = true;
             break;
 
         case 'Q':
-            if (!parse_u32(value, value_len, &cmd->parent_placement))
+            if (!parse_opt_u32(value, value_len, &cmd->parent_placement))
                 return false;
-            cmd->has_parent_placement = true;
             break;
 
         default:
@@ -511,10 +506,10 @@ kitty_format_reply(char *buf, size_t size, const struct kitty_command *cmd,
                    uint32_t id, const char *msg)
 {
     size_t n = xsnprintf(buf, size, "\x1b_Gi=%u", id);
-    if (cmd->has_number)
-        n += xsnprintf(buf + n, size - n, ",I=%u", cmd->number);
-    if (cmd->has_placement_id)
-        n += xsnprintf(buf + n, size - n, ",p=%u", cmd->placement_id);
+    if (cmd->number.set)
+        n += xsnprintf(buf + n, size - n, ",I=%u", cmd->number.value);
+    if (cmd->placement_id.set)
+        n += xsnprintf(buf + n, size - n, ",p=%u", cmd->placement_id.value);
     n += xsnprintf(buf + n, size - n, ";%s\x1b\\", msg);
     return n;
 }
@@ -524,10 +519,10 @@ kitty_reply(struct terminal *term, const struct kitty_command *cmd,
             uint32_t id, bool ok, const char *msg)
 {
     /* Without i or I, no reply is sent. */
-    if (!cmd->has_id && !cmd->has_number)
+    if (!cmd->id.set && !cmd->number.set)
         return;
 
-    const uint32_t quiet = cmd->has_quiet ? cmd->quiet : 0;
+    const uint32_t quiet = kitty_or(cmd->quiet, 0);
 
     /* q=2 suppresses every reply, q=1 suppresses OK replies. */
     if (quiet >= 2)
@@ -574,7 +569,6 @@ kitty_store_and_reply(
     struct kitty_image_store *store = kitty_image_store_for(term);
 
     image->id = id;
-    image->has_number = cmd->has_number;
     image->number = cmd->number;
     if (!kitty_image_store_add(store, image)) {
         kitty_image_destroy(image);
@@ -603,9 +597,7 @@ kitty_transmit(
     const char *payload, size_t payload_len)
 {
     struct kitty_image_store *store = kitty_image_store_for(term);
-    const uint32_t id = cmd->has_id
-        ? cmd->id
-        : kitty_image_store_alloc_id(store);
+    const uint32_t id = kitty_or(cmd->id, kitty_image_store_alloc_id(store));
 
     struct kitty_image image;
     const char *error = NULL;
@@ -635,19 +627,18 @@ kitty_handle_transmit(struct terminal *term, const struct kitty_command *cmd,
     if (kitty->chunk.active) {
         if (!kitty_chunk_append(kitty, payload, payload_len)) {
             kitty_chunk_reset(kitty);
-            kitty_reply(term, cmd, cmd->has_id ? cmd->id : 0, false,
+            kitty_reply(term, cmd, kitty_or(cmd->id, 0), false,
                         "EINVAL:image too large");
             return;
         }
 
         /* m=0, or no m key, ends the transfer. */
-        if (cmd->has_more && cmd->more != 0)
+        if (kitty_or(cmd->more, 0) != 0)
             return;
 
         const struct kitty_command first = kitty->chunk.cmd;
-        const uint32_t id = first.has_id
-            ? first.id
-            : kitty_image_store_alloc_id(kitty_image_store_for(term));
+        const uint32_t id = kitty_or(
+            first.id, kitty_image_store_alloc_id(kitty_image_store_for(term)));
 
         struct kitty_image image;
         const char *error = NULL;
@@ -676,12 +667,12 @@ kitty_handle_transmit(struct terminal *term, const struct kitty_command *cmd,
     }
 
     /* m=1 starts a transfer. Save the control data for the reply. */
-    if (cmd->has_more && cmd->more != 0) {
+    if (kitty_or(cmd->more, 0) != 0) {
         kitty->chunk.active = true;
         kitty->chunk.cmd = *cmd;
         if (!kitty_chunk_append(kitty, payload, payload_len)) {
             kitty_chunk_reset(kitty);
-            kitty_reply(term, cmd, cmd->has_id ? cmd->id : 0, false,
+            kitty_reply(term, cmd, kitty_or(cmd->id, 0), false,
                         "EINVAL:image too large");
         }
         return;
@@ -698,9 +689,9 @@ kitty_handle_query(struct terminal *term, const struct kitty_command *cmd,
 
     /* An I-only query still names the id paw would have assigned. */
     uint32_t id = 0;
-    if (cmd->has_id)
-        id = cmd->id;
-    else if (cmd->has_number)
+    if (cmd->id.set)
+        id = cmd->id.value;
+    else if (cmd->number.set)
         id = kitty_image_store_alloc_id(store);
 
     /* Load and check the image data as a transmit would, without
@@ -724,11 +715,11 @@ kitty_handle_put(struct terminal *term, const struct kitty_command *cmd)
     struct kitty_image *image = NULL;
     uint32_t id = 0;
 
-    if (cmd->has_id) {
-        id = cmd->id;
+    if (cmd->id.set) {
+        id = cmd->id.value;
         image = kitty_image_store_find_id(store, id);
-    } else if (cmd->has_number) {
-        image = kitty_image_store_find_number(store, cmd->number);
+    } else if (cmd->number.set) {
+        image = kitty_image_store_find_number(store, cmd->number.value);
         if (image != NULL)
             id = image->id;
     }
@@ -756,16 +747,16 @@ kitty_handle_apc(struct terminal *term, const char *data, size_t len)
         /* A malformed command aborts any in-progress transfer. */
         kitty_chunk_reset(kitty);
         kitty_reply(
-            term, &cmd, cmd.has_id ? cmd.id : 0, false,
+            term, &cmd, kitty_or(cmd.id, 0), false,
             "EINVAL:invalid control data");
         return;
     }
 
-    if (cmd.has_id && cmd.has_number) {
+    if (cmd.id.set && cmd.number.set) {
         /* A malformed command aborts any in-progress transfer. */
         kitty_chunk_reset(kitty);
         kitty_reply(
-            term, &cmd, cmd.id, false, "EINVAL:both i and I given");
+            term, &cmd, cmd.id.value, false, "EINVAL:both i and I given");
         return;
     }
 
@@ -778,9 +769,9 @@ kitty_handle_apc(struct terminal *term, const char *data, size_t len)
      * Relative placements are not supported. This is a rejection:
      * it changes no state, so an in-progress transfer is left alone.
      */
-    if (cmd.has_parent_id || cmd.has_parent_placement) {
+    if (cmd.parent_id.set || cmd.parent_placement.set) {
         kitty_reply(
-            term, &cmd, cmd.has_id ? cmd.id : 0, false,
+            term, &cmd, kitty_or(cmd.id, 0), false,
             "EINVAL:relative placement not supported");
         return;
     }
@@ -811,7 +802,7 @@ kitty_handle_apc(struct terminal *term, const char *data, size_t len)
         /* Animation is not supported, and neither is an unknown action is
          * rejected. */
         kitty_reply(
-            term, &cmd, cmd.has_id ? cmd.id : 0, false,
+            term, &cmd, kitty_or(cmd.id, 0), false,
             "EINVAL:unsupported action");
         return;
     }
@@ -1005,8 +996,8 @@ UNITTEST
     xassert(parse_control_data(control, sizeof(control) - 1, &cmd));
     xassert(cmd.action == KITTY_ACTION_TRANSMIT_AND_DISPLAY);
     xassert(cmd.format == KITTY_FORMAT_PNG);
-    xassert(cmd.has_id && cmd.id == 5);
-    xassert(cmd.has_quiet && cmd.quiet == 1);
+    xassert(cmd.id.set && cmd.id.value == 5);
+    xassert(cmd.quiet.set && cmd.quiet.value == 1);
 
     /* A bad number fails the command. */
     static const char bad_number[] = "a=T,f=abc";
@@ -1017,7 +1008,7 @@ UNITTEST
     static const char unknown[] = "N=1,i=5";
     kitty_command_init(&cmd);
     xassert(parse_control_data(unknown, sizeof(unknown) - 1, &cmd));
-    xassert(cmd.has_id && cmd.id == 5);
+    xassert(cmd.id.set && cmd.id.value == 5);
 }
 
 UNITTEST
@@ -1035,7 +1026,7 @@ UNITTEST
     xassert(!kitty_parse_apc(
                 apc, KITTY_CONTROL_DATA_MAX + 2,
                 &cmd, &payload, &payload_len));
-    xassert(!cmd.has_id);
+    xassert(!cmd.id.set);
 
     free(apc);
 }
@@ -1076,8 +1067,7 @@ UNITTEST
 {
     struct kitty_command cmd;
     kitty_command_init(&cmd);
-    cmd.has_id = true;
-    cmd.id = 31;
+    cmd.id = kitty_some_u32(31);
 
     char buf[64];
     static const char expected[] = "\x1b_Gi=31;OK\x1b\\";

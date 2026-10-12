@@ -44,6 +44,32 @@ enum kitty_compression {
     KITTY_COMPRESSION_ZLIB, /* o=z */
 };
 
+/* A protocol value that may be absent. */
+struct kitty_u32 {
+    uint32_t value;
+    bool set;
+};
+
+struct kitty_i32 {
+    int32_t value;
+    bool set;
+};
+
+static inline struct kitty_u32
+kitty_some_u32(uint32_t value)
+{
+    return (struct kitty_u32){.value = value, .set = true};
+}
+
+static inline struct kitty_i32
+kitty_some_i32(int32_t value)
+{
+    return (struct kitty_i32){.value = value, .set = true};
+}
+
+/* The value of an optional field, or 'fallback' when it is absent. */
+#define kitty_or(opt, fallback) ((opt).set ? (opt).value : (fallback))
+
 /* One parsed graphics command. Field names follow the protocol keys. */
 struct kitty_command {
     enum kitty_action action;
@@ -51,47 +77,27 @@ struct kitty_command {
     enum kitty_medium medium;
     enum kitty_compression compression;
 
-    bool has_width, has_height;
-    uint32_t width, height; /* s, v */
+    struct kitty_u32 width, height; /* s, v */
+    struct kitty_u32 id, number;    /* i, I */
+    struct kitty_u32 placement_id;  /* p */
+    struct kitty_u32 cols, rows;    /* c, r */
 
-    bool has_id, has_number;
-    uint32_t id, number; /* i, I */
+    /* x, y (source rectangle / delete cell) */
+    struct kitty_i32 x, y;
 
-    bool has_placement_id;
-    uint32_t placement_id; /* p */
+    /* w, h (source rectangle size) */
+    struct kitty_u32 w, h;
 
-    bool has_cols, has_rows;
-    uint32_t cols, rows; /* c, r */
+    /* X, Y (cell offsets) */
+    struct kitty_i32 X, Y;
 
-    bool has_x, has_y;
-    int32_t x, y; /* x, y (source rectangle / delete cell) */
-
-    bool has_w, has_h;
-    uint32_t w, h; /* w, h (source rectangle size) */
-
-    bool has_X, has_Y;
-    int32_t X, Y; /* X, Y (cell offsets) */
-
-    bool has_z;
-    int32_t z;
-
-    bool has_cursor;
-    uint32_t cursor; /* C */
-
-    bool has_quiet, has_more;
-    uint32_t quiet, more; /* q, m */
-
-    bool has_delete;
-    char delete_spec; /* d */
-
-    bool has_offset, has_size;
-    uint32_t offset, size; /* O, S */
-
-    bool has_unicode_placeholder;
-    uint32_t unicode_placeholder; /* U */
-
-    bool has_parent_id, has_parent_placement;
-    uint32_t parent_id, parent_placement; /* P, Q */
+    struct kitty_i32 z;
+    struct kitty_u32 cursor;               /* C */
+    struct kitty_u32 quiet, more;          /* q, m */
+    char delete_spec;                      /* d, 0 when absent */
+    struct kitty_u32 offset, size;         /* O, S */
+    struct kitty_u32 unicode_placeholder;  /* U */
+    struct kitty_u32 parent_id, parent_placement; /* P, Q */
 };
 
 void kitty_init(struct terminal *term);

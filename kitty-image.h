@@ -18,8 +18,7 @@ enum { KITTY_IMAGE_QUOTA = 320u * 1024 * 1024 };
  */
 struct kitty_image {
     uint32_t id;
-    bool has_number;
-    uint32_t number;
+    struct kitty_u32 number;
 
     int width, height;    /* Pixels */
     uint32_t *data;       /* Premultiplied a8r8g8b8 */

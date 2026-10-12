@@ -116,7 +116,7 @@ cells_for(int64_t num, int64_t den, uint32_t limit)
 static void
 kitty_placement_cell_span(
     int src_w, int src_h,
-    bool has_cols, uint32_t cols, bool has_rows, uint32_t rows,
+    struct kitty_u32 cols, struct kitty_u32 rows,
     int cell_width, int cell_height,
     int *out_cols, int *out_rows)
 {
@@ -143,20 +143,24 @@ kitty_placement_cell_span(
     int c = 1;
     int r = 1;
 
-    if (has_cols)
-        c = (int)(cols > max_cells ? max_cells : (cols == 0 ? 1 : cols));
-    if (has_rows)
-        r = (int)(rows > max_cells ? max_cells : (rows == 0 ? 1 : rows));
+    if (cols.set) {
+        c = (int)(cols.value > max_cells ? max_cells
+                  : (cols.value == 0 ? 1 : cols.value));
+    }
+    if (rows.set) {
+        r = (int)(rows.value > max_cells ? max_cells
+                  : (rows.value == 0 ? 1 : rows.value));
+    }
 
     /* With both c and r given, the span is used as-is. */
-    if (!has_cols && !has_rows) {
+    if (!cols.set && !rows.set) {
         c = cells_for(src_w, cell_width, max_cells);
         r = cells_for(src_h, cell_height, max_cells);
-    } else if (!has_rows) {
+    } else if (!rows.set) {
         /* rows = ceil(c * cell_width * src_h / (src_w * cell_height)) */
         r = cells_for((int64_t)c * cell_width * src_h,
                       (int64_t)src_w * cell_height, max_cells);
-    } else if (!has_cols) {
+    } else if (!cols.set) {
         /* cols = ceil(r * cell_height * src_w / (src_h * cell_width)) */
         c = cells_for((int64_t)r * cell_height * src_w,
                       (int64_t)src_h * cell_width, max_cells);
@@ -364,10 +368,10 @@ kitty_placement_put(
     const int64_t image_w = image->width;
     const int64_t image_h = image->height;
 
-    const int64_t x0 = cmd->has_x ? cmd->x : 0;
-    const int64_t y0 = cmd->has_y ? cmd->y : 0;
-    const int64_t w = cmd->has_w ? cmd->w : image_w;
-    const int64_t h = cmd->has_h ? cmd->h : image_h;
+    const int64_t x0 = kitty_or(cmd->x, 0);
+    const int64_t y0 = kitty_or(cmd->y, 0);
+    const int64_t w = kitty_or(cmd->w, image_w);
+    const int64_t h = kitty_or(cmd->h, image_h);
 
     const int64_t sx0 = max((int64_t)0, x0);
     const int64_t sy0 = max((int64_t)0, y0);
@@ -380,12 +384,12 @@ kitty_placement_put(
     if (sw <= 0 || sh <= 0)
         return "EINVAL:invalid source rectangle";
 
-    const bool scaled = cmd->has_cols || cmd->has_rows;
+    const bool scaled = cmd->cols.set || cmd->rows.set;
 
     int cols, rows;
     kitty_placement_cell_span(
         (int)sw, (int)sh,
-        cmd->has_cols, cmd->cols, cmd->has_rows, cmd->rows,
+        cmd->cols, cmd->rows,
         term->cell_width, term->cell_height, &cols, &rows);
 
     /* A placement taller than the whole ring cannot be represented. */
@@ -393,9 +397,9 @@ kitty_placement_put(
         rows = term->grid->num_rows;
 
     const uint32_t placement_id =
-        cmd->has_placement_id ? cmd->placement_id : 0;
+        kitty_or(cmd->placement_id, 0);
     const bool virtual_placement =
-        cmd->has_unicode_placeholder && cmd->unicode_placeholder != 0;
+        cmd->unicode_placeholder.set && cmd->unicode_placeholder.value != 0;
 
     struct kitty_placement p = {
         .image_id = image->id,
@@ -403,8 +407,8 @@ kitty_placement_put(
         .row = grid_row_absolute(term->grid, term->grid->cursor.point.row),
         .col = term->grid->cursor.point.col,
         /* The offset stays inside the anchor cell, as in kitty. */
-        .X = cmd->has_X ? max(0, min(cmd->X, term->cell_width - 1)) : 0,
-        .Y = cmd->has_Y ? max(0, min(cmd->Y, term->cell_height - 1)) : 0,
+        .X = cmd->X.set ? max(0, min(cmd->X.value, term->cell_width - 1)) : 0,
+        .Y = cmd->Y.set ? max(0, min(cmd->Y.value, term->cell_height - 1)) : 0,
         .src_x = (int)sx0,
         .src_y = (int)sy0,
         .src_w = (int)sw,
@@ -415,7 +419,7 @@ kitty_placement_put(
         .cell_width = term->cell_width,
         .cell_height = term->cell_height,
         .virtual_placement = virtual_placement,
-        .z = cmd->has_z ? cmd->z : 0,
+        .z = kitty_or(cmd->z, 0),
         .image = image,
     };
 
@@ -447,7 +451,7 @@ kitty_placement_put(
         /* Cursor movement policy: C=0 (default) moves the cursor to the
          * cell after the image's columns, on the image's last row. C=1
          * leaves the cursor alone. */
-        if (!cmd->has_cursor || cmd->cursor == 0) {
+        if (!cmd->cursor.set || cmd->cursor.value == 0) {
             if (added->cols > 0)
                 term_cursor_right(term, added->cols);
 
@@ -540,7 +544,7 @@ delete_matches(
     struct terminal *term, const struct kitty_command *cmd,
     const struct kitty_placement *p, const struct kitty_image *number_image)
 {
-    const char sel = cmd->has_delete ? cmd->delete_spec : 'a';
+    const char sel = cmd->delete_spec ? cmd->delete_spec : 'a';
     const int num_rows = term->grid->num_rows;
 
     switch (sel) {
@@ -554,23 +558,25 @@ delete_matches(
 
     case 'i':
     case 'I':
-        if (!cmd->has_id || p->image_id != cmd->id)
+        if (!cmd->id.set || p->image_id != cmd->id.value)
             return false;
-        return !cmd->has_placement_id || p->placement_id == cmd->placement_id;
+        return !cmd->placement_id.set ||
+            p->placement_id == cmd->placement_id.value;
 
     case 'n':
     case 'N':
         /* Only the newest image with this number. */
         if (number_image == NULL || p->image_id != number_image->id)
             return false;
-        return !cmd->has_placement_id || p->placement_id == cmd->placement_id;
+        return !cmd->placement_id.set ||
+            p->placement_id == cmd->placement_id.value;
 
     case 'r':
     case 'R':
-        if (!cmd->has_x || !cmd->has_y)
+        if (!cmd->x.set || !cmd->y.set)
             return false;
-        return (int64_t)cmd->x <= (int64_t)p->image_id &&
-            (int64_t)p->image_id <= (int64_t)cmd->y;
+        return (int64_t)cmd->x.value <= (int64_t)p->image_id &&
+            (int64_t)p->image_id <= (int64_t)cmd->y.value;
 
     case 'c':
     case 'C': {
@@ -586,46 +592,48 @@ delete_matches(
 
     case 'p':
     case 'P': {
-        if (p->virtual_placement || !cmd->has_x || !cmd->has_y)
+        if (p->virtual_placement || !cmd->x.set || !cmd->y.set)
             return false;
-        const int64_t sy = (int64_t)cmd->y - 1;
-        if (cmd->x < 1 || sy < 0 || sy >= num_rows)
+        const int64_t sy = (int64_t)cmd->y.value - 1;
+        if (cmd->x.value < 1 || sy < 0 || sy >= num_rows)
             return false;
-        return placement_covers_screen_cell(term, p, (int)cmd->x - 1, (int)sy);
+        return placement_covers_screen_cell(
+            term, p, (int)cmd->x.value - 1, (int)sy);
     }
 
     case 'q':
     case 'Q': {
-        if (p->virtual_placement || !cmd->has_x || !cmd->has_y || !cmd->has_z)
+        if (p->virtual_placement || !cmd->x.set || !cmd->y.set || !cmd->z.set)
             return false;
-        if (p->z != cmd->z)
+        if (p->z != cmd->z.value)
             return false;
-        const int64_t sy = (int64_t)cmd->y - 1;
-        if (cmd->x < 1 || sy < 0 || sy >= num_rows)
+        const int64_t sy = (int64_t)cmd->y.value - 1;
+        if (cmd->x.value < 1 || sy < 0 || sy >= num_rows)
             return false;
-        return placement_covers_screen_cell(term, p, (int)cmd->x - 1, (int)sy);
+        return placement_covers_screen_cell(
+            term, p, (int)cmd->x.value - 1, (int)sy);
     }
 
     case 'x':
     case 'X':
-        if (p->virtual_placement || !cmd->has_x || cmd->x < 1)
+        if (p->virtual_placement || !cmd->x.set || cmd->x.value < 1)
             return false;
-        return (int64_t)cmd->x - 1 >= p->col &&
-            (int64_t)cmd->x - 1 < (int64_t)p->col + p->cols;
+        return (int64_t)cmd->x.value - 1 >= p->col &&
+            (int64_t)cmd->x.value - 1 < (int64_t)p->col + p->cols;
 
     case 'y':
     case 'Y': {
-        if (p->virtual_placement || !cmd->has_y)
+        if (p->virtual_placement || !cmd->y.set)
             return false;
-        const int64_t sy = (int64_t)cmd->y - 1;
+        const int64_t sy = (int64_t)cmd->y.value - 1;
         return placement_covers_screen_row(term, p, (int)sy);
     }
 
     case 'z':
     case 'Z':
-        if (p->virtual_placement || !cmd->has_z)
+        if (p->virtual_placement || !cmd->z.set)
             return false;
-        return p->z == cmd->z;
+        return p->z == cmd->z.value;
 
     default:
         /* Unknown selectors, and 'f' (animation frames), change
@@ -645,7 +653,7 @@ delete_image_if_unused(struct kitty_image_store *images, uint32_t id)
 void
 kitty_placement_delete(struct terminal *term, const struct kitty_command *cmd)
 {
-    const char sel = cmd->has_delete ? cmd->delete_spec : 'a';
+    const char sel = cmd->delete_spec ? cmd->delete_spec : 'a';
 
     /* Animation frames are not supported: d=f changes nothing. */
     if (sel == 'f' || sel == 'F')
@@ -660,8 +668,8 @@ kitty_placement_delete(struct terminal *term, const struct kitty_command *cmd)
      * once, before any placement is removed.
      */
     struct kitty_image *number_image =
-        (sel == 'n' || sel == 'N') && cmd->has_number
-        ? kitty_image_store_find_number(images, cmd->number)
+        (sel == 'n' || sel == 'N') && cmd->number.set
+        ? kitty_image_store_find_number(images, cmd->number.value)
         : NULL;
 
     tll(uint32_t) touched = tll_init();
@@ -683,11 +691,11 @@ kitty_placement_delete(struct terminal *term, const struct kitty_command *cmd)
          * Kitty frees an image with no placement left for I, N and R
          * even when no placement matched.
          */
-        if (!cmd->has_placement_id) {
+        if (!cmd->placement_id.set) {
             switch (sel) {
             case 'I':
-                if (cmd->has_id)
-                    delete_image_if_unused(images, cmd->id);
+                if (cmd->id.set)
+                    delete_image_if_unused(images, cmd->id.value);
                 break;
 
             case 'N':
@@ -696,12 +704,12 @@ kitty_placement_delete(struct terminal *term, const struct kitty_command *cmd)
                 break;
 
             case 'R':
-                if (cmd->has_x && cmd->has_y) {
+                if (cmd->x.set && cmd->y.set) {
                     tll(uint32_t) range = tll_init();
                     tll_foreach(images->images, img_it) {
                         const uint32_t id = img_it->item.id;
-                        if ((int64_t)cmd->x <= (int64_t)id &&
-                            (int64_t)id <= (int64_t)cmd->y)
+                        if ((int64_t)cmd->x.value <= (int64_t)id &&
+                            (int64_t)id <= (int64_t)cmd->y.value)
                         {
                             tll_push_back(range, id);
                         }
@@ -983,10 +991,10 @@ kitty_scroll_down(struct terminal *term, struct scroll_region region, int rows)
         struct kitty_command pc;                                        \
         kitty_command_init(&pc);                                        \
         pc.action = KITTY_ACTION_PUT;                                   \
-        pc.has_id = true; pc.id = (img_id);                             \
-        pc.has_cols = true; pc.cols = (pcols);                          \
-        pc.has_rows = true; pc.rows = (prows);                          \
-        pc.has_cursor = true; pc.cursor = 1;                            \
+        pc.id = kitty_some_u32((img_id));                               \
+        pc.cols = kitty_some_u32((pcols));                              \
+        pc.rows = kitty_some_u32((prows));                              \
+        pc.cursor = kitty_some_u32(1);                                  \
         xassert(kitty_placement_put(                                    \
                     &(t), &pc,                                          \
                     kitty_image_store_find_id(                          \
@@ -1337,9 +1345,9 @@ UNITTEST
     struct kitty_command pc;
     kitty_command_init(&pc);
     pc.action = KITTY_ACTION_PUT;
-    pc.has_id = true; pc.id = 9;
-    pc.has_cols = true; pc.cols = 1;
-    pc.has_rows = true; pc.rows = 4;
+    pc.id = kitty_some_u32(9);
+    pc.cols = kitty_some_u32(1);
+    pc.rows = kitty_some_u32(4);
     /* C=0: the cursor move runs, and scrolls at the region bottom. */
     xassert(kitty_placement_put(
                 &term, &pc,
@@ -1508,14 +1516,10 @@ UNITTEST
     struct kitty_command put;
     kitty_command_init(&put);
     put.action = KITTY_ACTION_PUT;
-    put.has_id = true;
-    put.id = 7;
-    put.has_cols = true;
-    put.cols = 2;
-    put.has_rows = true;
-    put.rows = 2;
-    put.has_unicode_placeholder = true;
-    put.unicode_placeholder = 1;
+    put.id = kitty_some_u32(7);
+    put.cols = kitty_some_u32(2);
+    put.rows = kitty_some_u32(2);
+    put.unicode_placeholder = kitty_some_u32(1);
 
     term.normal.cursor.point.row = 2;
     term.normal.cursor.point.col = 3;
@@ -1540,7 +1544,6 @@ UNITTEST
     struct kitty_command del;
     kitty_command_init(&del);
     del.action = KITTY_ACTION_DELETE;
-    del.has_delete = true;
     del.delete_spec = 'a';
     kitty_placement_delete(&term, &del);
 
@@ -1550,8 +1553,7 @@ UNITTEST
 
     /* d=i deletes the virtual placement. */
     del.delete_spec = 'i';
-    del.has_id = true;
-    del.id = 7;
+    del.id = kitty_some_u32(7);
     kitty_placement_delete(&term, &del);
     xassert(scroll_test_find(&term, 7) == NULL);
 
@@ -1572,7 +1574,7 @@ UNITTEST
     uint32_t *px = xcalloc(1, sizeof(px[0]));
     px[0] = 0xff000000u;
     struct kitty_image proto = {
-        .id = 7, .width = 1, .height = 1, .has_number = true, .number = 5,
+        .id = 7, .width = 1, .height = 1, .number = kitty_some_u32(5),
         .data = px, .size = sizeof(px[0]),
     };
     xassert(kitty_image_store_add(kitty_image_store_for(&term), &proto));
@@ -1580,15 +1582,12 @@ UNITTEST
     struct kitty_command put;
     kitty_command_init(&put);
     put.action = KITTY_ACTION_PUT;
-    put.has_id = true;
-    put.id = 7;
-    put.has_unicode_placeholder = true;
-    put.unicode_placeholder = 1;
+    put.id = kitty_some_u32(7);
+    put.unicode_placeholder = kitty_some_u32(1);
 
     struct kitty_command del;
     kitty_command_init(&del);
     del.action = KITTY_ACTION_DELETE;
-    del.has_delete = true;
 
     /* Selectors that do not match virtual placements. */
     static const char *const ignores[] = {"c", "p", "x", "y", "z"};
@@ -1602,14 +1601,10 @@ UNITTEST
 
         kitty_command_init(&del);
         del.action = KITTY_ACTION_DELETE;
-        del.has_delete = true;
         del.delete_spec = ignores[i][0];
-        del.has_x = true;
-        del.x = 3;
-        del.has_y = true;
-        del.y = 2;
-        del.has_z = true;
-        del.z = 0;
+        del.x = kitty_some_i32(3);
+        del.y = kitty_some_i32(2);
+        del.z = kitty_some_i32(0);
         kitty_placement_delete(&term, &del);
 
         xassert(scroll_test_find(&term, 7) != NULL);
@@ -1618,12 +1613,9 @@ UNITTEST
     /* d=r/R matches the image id range and deletes it. */
     kitty_command_init(&del);
     del.action = KITTY_ACTION_DELETE;
-    del.has_delete = true;
     del.delete_spec = 'r';
-    del.has_x = true;
-    del.x = 1;
-    del.has_y = true;
-    del.y = 10;
+    del.x = kitty_some_i32(1);
+    del.y = kitty_some_i32(10);
     kitty_placement_delete(&term, &del);
     xassert(scroll_test_find(&term, 7) == NULL);
 
@@ -1637,10 +1629,8 @@ UNITTEST
 
     kitty_command_init(&del);
     del.action = KITTY_ACTION_DELETE;
-    del.has_delete = true;
     del.delete_spec = 'n';
-    del.has_number = true;
-    del.number = 5;
+    del.number = kitty_some_u32(5);
     kitty_placement_delete(&term, &del);
     xassert(scroll_test_find(&term, 7) == NULL);
 
@@ -1664,12 +1654,9 @@ UNITTEST
     struct kitty_command put;
     kitty_command_init(&put);
     put.action = KITTY_ACTION_PUT;
-    put.has_id = true;
-    put.id = 9;
-    put.has_X = true;
-    put.X = 100;
-    put.has_Y = true;
-    put.Y = -5;
+    put.id = kitty_some_u32(9);
+    put.X = kitty_some_i32(100);
+    put.Y = kitty_some_i32(-5);
     xassert(kitty_placement_put(&term, &put, image) == NULL);
     xassert(SCROLL_COUNT(term) == 2);
 
@@ -1678,8 +1665,7 @@ UNITTEST
     xassert(p->X == term.cell_width - 1 && p->Y == 0);
 
     /* The same non-zero pair replaces. */
-    put.has_placement_id = true;
-    put.placement_id = 3;
+    put.placement_id = kitty_some_u32(3);
     xassert(kitty_placement_put(&term, &put, image) == NULL);
     xassert(kitty_placement_put(&term, &put, image) == NULL);
     xassert(SCROLL_COUNT(term) == 3);

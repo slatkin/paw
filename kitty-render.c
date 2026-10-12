@@ -904,14 +904,10 @@ UNITTEST
     struct kitty_command put;
     kitty_command_init(&put);
     put.action = KITTY_ACTION_PUT;
-    put.has_id = true;
-    put.id = 42;
-    put.has_cols = true;
-    put.cols = 1;
-    put.has_rows = true;
-    put.rows = 1;
-    put.has_unicode_placeholder = true;
-    put.unicode_placeholder = 1;
+    put.id = kitty_some_u32(42);
+    put.cols = kitty_some_u32(1);
+    put.rows = kitty_some_u32(1);
+    put.unicode_placeholder = kitty_some_u32(1);
     xassert(kitty_placement_put(
                 &term, &put,
                 kitty_image_store_find_id(
@@ -989,8 +985,7 @@ UNITTEST
     struct kitty_command put;
     kitty_command_init(&put);
     put.action = KITTY_ACTION_PUT;
-    put.has_id = true;
-    put.id = 42;
+    put.id = kitty_some_u32(42);
     xassert(kitty_placement_put(
                 &term, &put,
                 kitty_image_store_find_id(

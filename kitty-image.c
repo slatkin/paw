@@ -129,7 +129,7 @@ kitty_image_store_find_number(struct kitty_image_store *store, uint32_t number)
 {
     /* The newest image with this number wins. */
     tll_rforeach(store->images, it) {
-        if (it->item.has_number && it->item.number == number)
+        if (it->item.number.set && it->item.number.value == number)
             return &it->item;
     }
     return NULL;
@@ -390,11 +390,11 @@ kitty_image_decode_raw(
     size_t inflate_cap = max_bytes;
 
     if (!png) {
-        if (!cmd->has_width || !cmd->has_height) {
+        if (!cmd->width.set || !cmd->height.set) {
             *error = "EINVAL:missing dimensions";
             return false;
         }
-        if (cmd->width == 0 || cmd->height == 0) {
+        if (cmd->width.value == 0 || cmd->height.value == 0) {
             *error = "EINVAL:invalid dimensions";
             return false;
         }
@@ -402,7 +402,7 @@ kitty_image_decode_raw(
         /* The stored form is always RGBA. kitty_checked_size() is
          * wrap-safe. */
         if (!kitty_checked_size(
-                cmd->width, cmd->height, 4, max_bytes, &rgba_size))
+                cmd->width.value, cmd->height.value, 4, max_bytes, &rgba_size))
         {
             *error = "EINVAL:image too large";
             return false;
@@ -410,8 +410,9 @@ kitty_image_decode_raw(
 
         /* The raw size (3 or 4 bytes per pixel) is at most the RGBA
          * size, but check it too so that every product is wrap-safe. */
-        if (!kitty_checked_size(cmd->width, cmd->height, (uint32_t)bpp,
-                                SIZE_MAX, &raw_expected))
+        if (!kitty_checked_size(
+                cmd->width.value, cmd->height.value, (uint32_t)bpp,
+                SIZE_MAX, &raw_expected))
         {
             *error = "EINVAL:image too large";
             return false;
@@ -449,8 +450,8 @@ kitty_image_decode_raw(
             out->data[i] = premultiply(
                 px[0], px[1], px[2], bpp == 4 ? px[3] : 0xff);
         }
-        out->width = cmd->width;
-        out->height = cmd->height;
+        out->width = cmd->width.value;
+        out->height = cmd->height.value;
         out->size = rgba_size;
         ok = true;
     }
@@ -510,9 +511,8 @@ UNITTEST
         struct kitty_command cmd;
         kitty_command_init(&cmd);
         cmd.format = pass == 0 ? KITTY_FORMAT_RGBA : KITTY_FORMAT_RGB;
-        cmd.has_width = cmd.has_height = true;
-        cmd.width = 2147483648u;
-        cmd.height = 2147483648u;
+        cmd.width = kitty_some_u32(2147483648u);
+        cmd.height = kitty_some_u32(2147483648u);
 
         const char *error = NULL;
         xassert(!kitty_image_decode(
@@ -529,9 +529,8 @@ UNITTEST
     struct kitty_command cmd;
     kitty_command_init(&cmd);
     cmd.format = KITTY_FORMAT_RGB;
-    cmd.has_width = cmd.has_height = true;
-    cmd.width = 2;
-    cmd.height = 1;
+    cmd.width = kitty_some_u32(2);
+    cmd.height = kitty_some_u32(1);
 
     static const char payload[] = "/wAAAID/";
     const char *error = NULL;
@@ -562,9 +561,8 @@ UNITTEST
     struct kitty_command cmd;
     kitty_command_init(&cmd);
     cmd.format = KITTY_FORMAT_RGBA;
-    cmd.has_width = cmd.has_height = true;
-    cmd.width = 2;
-    cmd.height = 1;
+    cmd.width = kitty_some_u32(2);
+    cmd.height = kitty_some_u32(1);
 
     static const char payload[] = "ChQe/8hkMoA=";
     const char *error = NULL;
@@ -585,9 +583,8 @@ UNITTEST
     struct kitty_command cmd;
     kitty_command_init(&cmd);
     cmd.format = KITTY_FORMAT_RGB;
-    cmd.has_width = cmd.has_height = true;
-    cmd.width = 2;
-    cmd.height = 1;
+    cmd.width = kitty_some_u32(2);
+    cmd.height = kitty_some_u32(1);
 
     static const char payload[] = "/wAAAID/";
     const char *error = NULL;
@@ -623,9 +620,8 @@ UNITTEST
     struct kitty_command cmd;
     kitty_command_init(&cmd);
     cmd.format = KITTY_FORMAT_RGB;
-    cmd.has_width = cmd.has_height = true;
-    cmd.width = 1;
-    cmd.height = 1;
+    cmd.width = kitty_some_u32(1);
+    cmd.height = kitty_some_u32(1);
 
     static const char payload[] = "/wAA";
     const char *error = NULL;
@@ -636,8 +632,7 @@ UNITTEST
                     &cmd, payload, sizeof(payload) - 1,
                     KITTY_IMAGE_QUOTA, &img, &error));
         img.id = kitty_image_store_alloc_id(&store);
-        img.has_number = true;
-        img.number = 13;
+        img.number = kitty_some_u32(13);
         kitty_image_store_add(&store, &img);
     }
 
@@ -703,9 +698,8 @@ UNITTEST
     kitty_command_init(&cmd);
     cmd.format = KITTY_FORMAT_RGBA;
     cmd.compression = KITTY_COMPRESSION_ZLIB;
-    cmd.has_width = cmd.has_height = true;
-    cmd.width = 4;
-    cmd.height = 4;
+    cmd.width = kitty_some_u32(4);
+    cmd.height = kitty_some_u32(4);
 
     static const char payload[] =
         "eNoBQAC//wAHDhUcIyoxOD9GTVRbYmlwd36FjJOaoaivtr3Ey9LZ4Ofu9fwDChEY"
@@ -817,9 +811,8 @@ UNITTEST
     struct kitty_command cmd;
     kitty_command_init(&cmd);
     cmd.format = KITTY_FORMAT_RGBA;
-    cmd.has_width = cmd.has_height = true;
-    cmd.width = 4;
-    cmd.height = 4;
+    cmd.width = kitty_some_u32(4);
+    cmd.height = kitty_some_u32(4);
 
     const char *error = NULL;
     xassert(!kitty_image_decode(&cmd, "AAAA", 4, 32, &img, &error));
