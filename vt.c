@@ -16,6 +16,7 @@
 #include "csi.h"
 #include "dcs.h"
 #include "debug.h"
+#include "kitty-graphics.h"
 #include "osc.h"
 #include "sixel.h"
 #include "util.h"
@@ -36,6 +37,8 @@ enum state {
     STATE_CSI_IGNORE,
 
     STATE_OSC_STRING,
+
+    STATE_APC_STRING,
 
     STATE_DCS_ENTRY,
     STATE_DCS_PARAM,
@@ -66,6 +69,8 @@ static const char *const state_names[] = {
     [STATE_CSI_IGNORE] = "CSI ignore",
 
     [STATE_OSC_STRING] = "OSC string",
+
+    [STATE_APC_STRING] = "APC string",
 
     [STATE_DCS_ENTRY] = "DCS entry",
     [STATE_DCS_PARAM] = "DCS param",
@@ -751,7 +756,8 @@ anywhere(struct terminal *term, uint8_t data)
     case 0x1b:                                                                            action_clear(term);              return STATE_ESCAPE;
 
     /* 8-bit C1 control characters (not supported) */
-    case 0x80 ... 0x9f:                                                                                                    return STATE_GROUND;
+    case 0x80 ... 0x9e:                                                                                                    return STATE_GROUND;
+    case 0x9f:                                                                             kitty_apc_start(term);           return STATE_APC_STRING;
     }
 
     return term->vt.state;
@@ -796,7 +802,8 @@ state_escape_switch(struct terminal *term, uint8_t data)
     case 0x5b:                                                                            action_clear(term);              return STATE_CSI_ENTRY;
     case 0x5c:                                           action_esc_dispatch(term, data);                                  return STATE_GROUND;
     case 0x5d:                                                                            action_osc_start(term, data);    return STATE_OSC_STRING;
-    case 0x5e ... 0x5f:                                                                                                    return STATE_SOS_PM_APC_STRING;
+    case 0x5e:                                                                                                             return STATE_SOS_PM_APC_STRING;
+    case 0x5f:                                                                            kitty_apc_start(term);           return STATE_APC_STRING;
     case 0x60 ... 0x7e:                                  action_esc_dispatch(term, data);                                  return STATE_GROUND;
     case 0x7f:                                           action_ignore(term);                                              return STATE_ESCAPE;
     }
@@ -1036,6 +1043,25 @@ state_sos_pm_apc_string_switch(struct terminal *term, uint8_t data)
 }
 
 static enum state
+state_apc_string_switch(struct terminal *term, uint8_t data)
+{
+    switch (data) {
+        /*              exit                             current                          enter                            new state */
+
+    /* Note: any byte, including UTF-8 continuation bytes, is data. */
+    default:                                             kitty_apc_put(term, data);                                        return STATE_APC_STRING;
+
+    case 0x18:
+    case 0x1a:          kitty_apc_end(term);             action_execute(term, data);                                       return STATE_GROUND;
+
+    case 0x1b:          kitty_apc_end(term);             action_clear(term);                                               return STATE_ESCAPE;
+
+    /* 8-bit C1 string terminator (ST) */
+    case 0x9c:          kitty_apc_end(term);                                                                               return STATE_GROUND;
+    }
+}
+
+static enum state
 state_utf8_21_switch(struct terminal *term, uint8_t data)
 {
     switch (data) {
@@ -1113,6 +1139,7 @@ vt_from_slave(struct terminal *term, const uint8_t *data, size_t len)
         case STATE_CSI_INTERMEDIATE:    current_state = state_csi_intermediate_switch(term, *p); break;
         case STATE_CSI_IGNORE:          current_state = state_csi_ignore_switch(term, *p); break;
         case STATE_OSC_STRING:          current_state = state_osc_string_switch(term, *p); break;
+        case STATE_APC_STRING:          current_state = state_apc_string_switch(term, *p); break;
         case STATE_DCS_ENTRY:           current_state = state_dcs_entry_switch(term, *p); break;
         case STATE_DCS_PARAM:           current_state = state_dcs_param_switch(term, *p); break;
         case STATE_DCS_INTERMEDIATE:    current_state = state_dcs_intermediate_switch(term, *p); break;
