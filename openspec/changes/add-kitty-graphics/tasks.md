@@ -24,9 +24,9 @@ Test convention: foot runs `UNITTEST { ... }` blocks as constructors in debug bu
 
 ## 4. File, temp file, and shared memory transfer
 
-- [ ] 4.1 Implement `t=f` with the path checks and the single error reply (design D4, spec kitty-graphics-file-transfer). Verify: unit checks for a regular file, `/dev/zero`, a symlink to `/proc/self/environ`, a FIFO (must not block), a symlink loop, a missing file, and a short file (`O`+`S`). All failures give `EBADF:Failed to read image file`. Live check: `scripts/kitty-gfx-check.py "a=T,t=f,f=100,i=1;$(printf %s /path/to/img.png | base64 -w0)"` shows the image and prints `_Gi=1;OK`.
-- [ ] 4.2 Implement `t=t` with the delete rule. Verify: unit checks that `/tmp/tty-graphics-protocol-x` is deleted, `/tmp/photo` is kept, and `$HOME/tty-graphics-protocol` is kept. Live check: `kitten icat --transfer-mode=file <img>` (kitten's `file` mode sends `t=t`) shows the image, and `kitten icat --detect-support` prints a transfer mode.
-- [ ] 4.3 Implement `t=s` with the name check and unlink on every path after a valid name. Verify: unit checks for a valid object (unlinked afterwards), short data (error, and unlinked), and the name `/a/b` (error, nothing unlinked). Live check: `kitten icat --transfer-mode=memory <img>` shows the image.
+- [x] 4.1 Implement `t=f` with the path checks and the single error reply (design D4, spec kitty-graphics-file-transfer). Verify: unit checks for a regular file, `/dev/zero`, a symlink to `/proc/self/environ`, a FIFO (must not block), a symlink loop, a missing file, and a short file (`O`+`S`). All failures give `EBADF:Failed to read image file`. Live check: `scripts/kitty-gfx-check.py "a=T,t=f,f=100,i=1;$(printf %s /path/to/img.png | base64 -w0)"` shows the image and prints `_Gi=1;OK`.
+- [x] 4.2 Implement `t=t` with the delete rule. Verify: unit checks that `/tmp/tty-graphics-protocol-x` is deleted, `/tmp/photo` is kept, and `$HOME/tty-graphics-protocol` is kept. Live check: `kitten icat --transfer-mode=file <img>` (kitten's `file` mode sends `t=t`) shows the image, and `kitten icat --detect-support` prints a transfer mode.
+- [x] 4.3 Implement `t=s` with the name check and unlink on every path after a valid name. Verify: unit checks for a valid object (unlinked afterwards), short data (error, and unlinked), and the name `/a/b` (error, nothing unlinked). Live check: `kitten icat --transfer-mode=memory <img>` shows the image.
 
 ## 5. Placements and the overlay render
 
