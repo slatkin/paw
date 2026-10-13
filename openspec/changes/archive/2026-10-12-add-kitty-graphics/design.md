@@ -85,7 +85,8 @@ Hooks (each next to the matching sixel call):
 |---|---|---|
 | `term_scroll_partial` | `kitty_scroll_up(term, region, rows)` | Delete placements whose top row leaves the scrollback. In a partial region: anchors in the fixed margins get the same row swap as the grid rows. Placements that cross a region edge are clipped. |
 | `term_scroll_reverse_partial` | `kitty_scroll_down(term, region, rows)` | Mirror of the above |
-| `csi.c` ED 2 and ED 3 | `kitty_clear_visible(term)` | Spec: clear deletes visible placements |
+| `csi.c` ED 2 | `kitty_clear_visible(term)` | Delete visible placements (not virtual ones), then free every image of the screen that has no placement left, including one that never had a placement. |
+| `csi.c` ED 3 | `kitty_clear_visible(term)`, then `term_erase_scrollback` → `kitty_scrollback_clear(term)` | As ED 2, and also delete the placements that are not on screen (not virtual ones). |
 | `csi.c` `decset_decrst` alt-screen exit, next to "Delete all sixel images on the alt screen" | `kitty_alt_screen_clear(term)` | Delete the alternate screen images and placements. foot clears alt sixels on exit, so the alt screen is always empty on the next entry. This gives the result the spec requires for entry. |
 | `term_reset` | `kitty_reset(term)` | Delete all |
 | `term_set_fonts`, next to `sixel_cell_size_changed` | `kitty_cell_size_changed(term)` | Drop the scaled caches. Spans stay. |

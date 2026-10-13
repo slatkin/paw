@@ -103,7 +103,7 @@ Placements SHALL move with the text when the screen scrolls, into and through th
 - **THEN** the placement moves up one row with the text below the cursor
 
 ### Requirement: Clear, alternate screen, and reset
-Clear screen (`CSI 2 J` and `CSI 3 J`) SHALL delete all placements that are visible on screen. Entering the alternate screen SHALL delete all placements and images of the alternate screen. Main and alternate screens SHALL each have their own images and placements. A terminal reset (RIS) SHALL delete all placements and images.
+Clear screen (`CSI 2 J`) SHALL delete all placements that are visible on screen. `CSI 3 J` SHALL also delete all placements in the scrollback. Neither sequence SHALL delete a virtual placement. After either sequence, paw SHALL delete each image of the current screen that no placement refers to any more, including an image that never had a placement. Entering the alternate screen SHALL delete all placements and images of the alternate screen. Main and alternate screens SHALL each have their own images and placements. A terminal reset (RIS) SHALL delete all placements and images.
 
 #### Scenario: Clear command
 - **WHEN** an image is on screen and the user runs `clear`
