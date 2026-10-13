@@ -12,8 +12,6 @@ makedepends=('meson' 'ninja' 'python' 'scdoc' 'tllist' 'wayland-protocols')
 optdepends=('bash-completion: completion for positional arguments'
             'libnotify: desktop notifications'
             'xdg-utils: open URLs')
-# paw installs the foot terminfo entry, which foot-terminfo also installs.
-conflicts=('foot-terminfo')
 source=("https://github.com/slatkin/paw/releases/download/v${_tag}/paw-${_tag}.tar.gz")
 # aur.yml sets the checksum for each release.
 sha256sums=('SKIP')
@@ -27,5 +25,7 @@ build() {
 package() {
   cd "paw-${_tag}"
   DESTDIR="${pkgdir}" meson install -C build --no-rebuild
+  # ncurses already ships the foot and foot-direct terminfo entries.
+  rm -r "${pkgdir}/usr/share/terminfo/"
   install -Dm644 LICENSE -t "${pkgdir}/usr/share/licenses/${pkgname}/"
 }
