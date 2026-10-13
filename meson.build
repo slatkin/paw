@@ -1,5 +1,5 @@
 project('paw', 'c',
-        version: '1.28.0',
+        version: '1.28.0-paw.1',
         license: 'MIT',
         meson_version: '>=0.59.0',
         default_options: [

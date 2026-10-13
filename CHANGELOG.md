@@ -1,6 +1,7 @@
 # Changelog
 
 * [Unreleased](#unreleased)
+* [1.28.0-paw.1](#1-28-0-paw-1)
 * [1.28.0](#1-28-0)
 * [1.27.0](#1-27-0)
 * [1.26.1](#1-26-1)
@@ -72,6 +73,8 @@
 
 
 ## Unreleased
+
+## 1.28.0-paw.1
 ### Added
 
 * Kitty graphics protocol support: image transmission (direct, chunked,
