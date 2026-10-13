@@ -178,8 +178,8 @@ UNITTEST
     /*
      * DECSTR (soft reset) while on the alternate screen leaves the
      * alternate grid. Its images and placements must not survive, or
-     * the next CSI ?1049h, which relies on the exit path having
-     * cleared them, would show them again.
+     * the next CSI ?1049h, whose entry path clears the alt screen
+     * images and placements anyway, would show them again.
      */
     static struct config conf;
     static struct wayland wl;
