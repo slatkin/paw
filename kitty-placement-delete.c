@@ -205,6 +205,15 @@ delete_matches(
     }
 }
 
+static void
+delete_image_if_unused(
+    struct kitty_image_store *images, struct kitty_image_id id)
+{
+    struct kitty_image *image = kitty_image_store_find_id(images, id);
+    if (image != NULL && image->placements == 0)
+        kitty_image_store_delete_id(images, id);
+}
+
 void
 kitty_placement_delete(struct terminal *term, const struct kitty_command *cmd)
 {
@@ -228,6 +237,8 @@ kitty_placement_delete(struct terminal *term, const struct kitty_command *cmd)
             images, KITTY_IMAGE_NUMBER(cmd->number.value))
         : NULL;
 
+    tll(struct kitty_image_id) touched = tll_init();
+
     tll_foreach(store->placements, it) {
         struct kitty_placement *p = &it->item;
         if (!delete_matches(term, cmd, p, number_image))
@@ -235,17 +246,60 @@ kitty_placement_delete(struct terminal *term, const struct kitty_command *cmd)
 
         /* Repaint the cells the placement covered. */
         kitty_placement_dirty(term, p);
+        tll_push_back(touched, p->image_id);
         kitty_placement_unlink(store, p);
         kitty_placement_remove(store, it);
     }
 
     if (uppercase) {
         /*
-         * An uppercase variant also deletes the image data of every
-         * image that has no placement left.
+         * Kitty frees an image with no placement left for I, N and R
+         * even when no placement matched.
          */
-        kitty_image_store_delete_unreferenced(images);
+        if (!cmd->placement_id.set) {
+            switch (sel) {
+            case 'I':
+                if (cmd->id.set)
+                    delete_image_if_unused(images, KITTY_IMAGE_ID(cmd->id.value));
+                break;
+
+            case 'N':
+                if (number_image != NULL)
+                    delete_image_if_unused(images, number_image->id);
+                break;
+
+            case 'R':
+                if (cmd->x.set && cmd->y.set) {
+                    tll(struct kitty_image_id) range = tll_init();
+                    tll_foreach(images->images, img_it) {
+                        const struct kitty_image_id id = img_it->item.id;
+                        if ((int64_t)cmd->x.value <= (int64_t)id.v &&
+                            (int64_t)id.v <= (int64_t)cmd->y.value)
+                        {
+                            tll_push_back(range, id);
+                        }
+                    }
+                    tll_foreach(range, r)
+                        delete_image_if_unused(images, r->item);
+                    tll_free(range);
+                }
+                break;
+
+            default:
+                break;
+            }
+        }
+
+        /*
+         * An uppercase variant also deletes the image data of every
+         * image that lost a placement in this command and has no
+         * placement left.
+         */
+        tll_foreach(touched, t)
+            delete_image_if_unused(images, t->item);
     }
+
+    tll_free(touched);
 }
 
 
@@ -255,10 +309,12 @@ UNITTEST
 {
     /*
      * An uppercase d variant deletes the image data of every image
-     * that has no placement left: the image that lost its last
-     * placement, and an image that was never placed. An image with a
-     * placement left (a virtual placement counts) keeps its data. A
-     * lowercase variant deletes the placements but keeps the data.
+     * that lost a placement in this command and has no placement
+     * left. Uppercase I additionally frees an image that has no
+     * placement, even when no placement matched. An image that was
+     * never placed keeps its data. An image with a placement left (a
+     * virtual placement counts) keeps its data. A lowercase variant
+     * deletes the placements but keeps the data.
      */
     struct terminal term;
     KITTY_TEST_TERM(term, 4, 8, 8, 16, 8);
@@ -277,6 +333,22 @@ UNITTEST
 
     xassert(kitty_test_placement(&term, 1) == NULL);
     xassert(kitty_test_image(&term, 1) == NULL);
+    xassert(kitty_test_image(&term, 2) != NULL);
+
+    /* A stored, unplaced image survives d=I that names another id. */
+    kitty_test_add_image(&term, 7, 2, 2);
+
+    struct kitty_command del_id = kitty_test_put_command(5);
+    del_id.action = KITTY_ACTION_DELETE;
+    del_id.delete_spec = 'I';
+    kitty_placement_delete(&term, &del_id);
+
+    xassert(kitty_test_image(&term, 7) != NULL);
+
+    /* d=I frees the never-placed image it names. */
+    del_id.id = kitty_some_u32(2);
+    kitty_placement_delete(&term, &del_id);
+
     xassert(kitty_test_image(&term, 2) == NULL);
 
     /* An image whose only placement is virtual keeps its data. */
