@@ -41,6 +41,111 @@ placement_covers_screen_cell(
     return placement_covers_screen_row(term, p, screen_row);
 }
 
+static bool
+delete_matches_visible(struct terminal *term, const struct kitty_placement *p)
+{
+    if (p->virtual_placement)
+        return false;
+    int top;
+    return kitty_placement_visible_top(term, p, &top);
+}
+
+static bool
+delete_matches_id(
+    const struct kitty_command *cmd, const struct kitty_placement *p)
+{
+    if (!cmd->id.set || p->image_id.v != cmd->id.value)
+        return false;
+    return !cmd->placement_id.set ||
+        p->placement_id.v == cmd->placement_id.value;
+}
+
+static bool
+delete_matches_number(
+    const struct kitty_command *cmd, const struct kitty_placement *p,
+    const struct kitty_image *number_image)
+{
+    /* Only the newest image with this number. */
+    if (number_image == NULL || p->image_id.v != number_image->id.v)
+        return false;
+    return !cmd->placement_id.set ||
+        p->placement_id.v == cmd->placement_id.value;
+}
+
+static bool
+delete_matches_image_range(
+    const struct kitty_command *cmd, const struct kitty_placement *p)
+{
+    if (!cmd->x.set || !cmd->y.set)
+        return false;
+    return (int64_t)cmd->x.value <= (int64_t)p->image_id.v &&
+        (int64_t)p->image_id.v <= (int64_t)cmd->y.value;
+}
+
+static bool
+delete_matches_cursor_cell(
+    struct terminal *term, const struct kitty_placement *p)
+{
+    if (p->virtual_placement)
+        return false;
+    const int col = term->grid->cursor.point.col;
+    if (col < p->col || col >= p->col + p->cols)
+        return false;
+    const int64_t abs_row = grid_row_absolute(
+        term->grid, term->grid->cursor.point.row);
+    return placement_covers_abs_row(term, p, abs_row);
+}
+
+/*
+ * The p/P and q/Q selectors: the placement covers one screen cell.
+ * q/Q additionally requires the placement's z value to match.
+ */
+static bool
+delete_matches_screen_cell(
+    struct terminal *term, const struct kitty_command *cmd,
+    const struct kitty_placement *p, bool check_z)
+{
+    if (p->virtual_placement || !cmd->x.set || !cmd->y.set)
+        return false;
+    if (check_z && (!cmd->z.set || p->z != cmd->z.value))
+        return false;
+    const int64_t sy = (int64_t)cmd->y.value - 1;
+    if (cmd->x.value < 1 || sy < 0 || sy >= term->grid->num_rows)
+        return false;
+    return placement_covers_screen_cell(
+        term, p, (int)cmd->x.value - 1, (int)sy);
+}
+
+static bool
+delete_matches_x(
+    const struct kitty_command *cmd, const struct kitty_placement *p)
+{
+    if (p->virtual_placement || !cmd->x.set || cmd->x.value < 1)
+        return false;
+    return (int64_t)cmd->x.value - 1 >= p->col &&
+        (int64_t)cmd->x.value - 1 < (int64_t)p->col + p->cols;
+}
+
+static bool
+delete_matches_screen_row(
+    struct terminal *term, const struct kitty_command *cmd,
+    const struct kitty_placement *p)
+{
+    if (p->virtual_placement || !cmd->y.set)
+        return false;
+    const int64_t sy = (int64_t)cmd->y.value - 1;
+    return placement_covers_screen_row(term, p, (int)sy);
+}
+
+static bool
+delete_matches_z(
+    const struct kitty_command *cmd, const struct kitty_placement *p)
+{
+    if (p->virtual_placement || !cmd->z.set)
+        return false;
+    return p->z == cmd->z.value;
+}
+
 /*
  * Test one placement against the command's `d` selector. Coordinates
  * are 1-based, as in kitty. Placements that are not visible as cells
@@ -52,96 +157,46 @@ delete_matches(
     struct terminal *term, const struct kitty_command *cmd,
     const struct kitty_placement *p, const struct kitty_image *number_image)
 {
-    const char sel = cmd->delete_spec ? cmd->delete_spec : 'a';
-    const int num_rows = term->grid->num_rows;
-
-    switch (sel) {
+    switch (cmd->delete_spec ? cmd->delete_spec : 'a') {
     case 'a':
-    case 'A': {
-        if (p->virtual_placement)
-            return false;
-        int top;
-        return kitty_placement_visible_top(term, p, &top);
-    }
+    case 'A':
+        return delete_matches_visible(term, p);
 
     case 'i':
     case 'I':
-        if (!cmd->id.set || p->image_id.v != cmd->id.value)
-            return false;
-        return !cmd->placement_id.set ||
-            p->placement_id.v == cmd->placement_id.value;
+        return delete_matches_id(cmd, p);
 
     case 'n':
     case 'N':
-        /* Only the newest image with this number. */
-        if (number_image == NULL || p->image_id.v != number_image->id.v)
-            return false;
-        return !cmd->placement_id.set ||
-            p->placement_id.v == cmd->placement_id.value;
+        return delete_matches_number(cmd, p, number_image);
 
     case 'r':
     case 'R':
-        if (!cmd->x.set || !cmd->y.set)
-            return false;
-        return (int64_t)cmd->x.value <= (int64_t)p->image_id.v &&
-            (int64_t)p->image_id.v <= (int64_t)cmd->y.value;
+        return delete_matches_image_range(cmd, p);
 
     case 'c':
-    case 'C': {
-        if (p->virtual_placement)
-            return false;
-        const int col = term->grid->cursor.point.col;
-        if (col < p->col || col >= p->col + p->cols)
-            return false;
-        const int64_t abs_row = grid_row_absolute(
-            term->grid, term->grid->cursor.point.row);
-        return placement_covers_abs_row(term, p, abs_row);
-    }
+    case 'C':
+        return delete_matches_cursor_cell(term, p);
 
     case 'p':
-    case 'P': {
-        if (p->virtual_placement || !cmd->x.set || !cmd->y.set)
-            return false;
-        const int64_t sy = (int64_t)cmd->y.value - 1;
-        if (cmd->x.value < 1 || sy < 0 || sy >= num_rows)
-            return false;
-        return placement_covers_screen_cell(
-            term, p, (int)cmd->x.value - 1, (int)sy);
-    }
+    case 'P':
+        return delete_matches_screen_cell(term, cmd, p, false);
 
     case 'q':
-    case 'Q': {
-        if (p->virtual_placement || !cmd->x.set || !cmd->y.set || !cmd->z.set)
-            return false;
-        if (p->z != cmd->z.value)
-            return false;
-        const int64_t sy = (int64_t)cmd->y.value - 1;
-        if (cmd->x.value < 1 || sy < 0 || sy >= num_rows)
-            return false;
-        return placement_covers_screen_cell(
-            term, p, (int)cmd->x.value - 1, (int)sy);
-    }
+    case 'Q':
+        return delete_matches_screen_cell(term, cmd, p, true);
 
     case 'x':
     case 'X':
-        if (p->virtual_placement || !cmd->x.set || cmd->x.value < 1)
-            return false;
-        return (int64_t)cmd->x.value - 1 >= p->col &&
-            (int64_t)cmd->x.value - 1 < (int64_t)p->col + p->cols;
+        return delete_matches_x(cmd, p);
 
     case 'y':
-    case 'Y': {
-        if (p->virtual_placement || !cmd->y.set)
-            return false;
-        const int64_t sy = (int64_t)cmd->y.value - 1;
-        return placement_covers_screen_row(term, p, (int)sy);
-    }
+    case 'Y':
+        return delete_matches_screen_row(term, cmd, p);
 
     case 'z':
     case 'Z':
-        if (p->virtual_placement || !cmd->z.set)
-            return false;
-        return p->z == cmd->z.value;
+        return delete_matches_z(cmd, p);
 
     default:
         /* Unknown selectors, and 'f' (animation frames), change
