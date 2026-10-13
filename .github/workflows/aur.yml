@@ -1,0 +1,103 @@
+name: Publish AUR
+
+# Publishes the AUR package for an existing paw release. It runs by hand with
+# the release version, so it can be retried without rebuilding anything.
+# Failures here do not affect the GitHub release.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version, for example 1.28.0-paw.1 or v1.28.0-paw.1'
+        required: true
+        type: string
+
+concurrency:
+  group: aur-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    # Same pinned base-devel snapshot as ci.yml, so makepkg runs the same tools.
+    container: archlinux/archlinux:base-devel-20260818.0.575430
+    permissions:
+      contents: read
+
+    steps:
+      - name: Install tooling
+        run: |
+          pacman_retry() {
+            for attempt in 1 2 3; do
+              "$@" && return 0
+              pacman -Syy --noconfirm
+              sleep $((attempt * 10))
+            done
+            "$@"
+          }
+          pacman_retry pacman -Syu --noconfirm
+          pacman_retry pacman -S --noconfirm --needed github-cli openssh git
+
+      - uses: actions/checkout@v7
+
+      - name: Normalize version input
+        env:
+          VERSION_INPUT: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          VERSION="${VERSION_INPUT#v}"
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+-paw\.[0-9]+$ ]]; then
+            echo "Invalid version '${VERSION_INPUT}';" \
+              "expected e.g. 1.28.0-paw.1 or v1.28.0-paw.1" >&2
+            exit 1
+          fi
+          echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
+
+      - name: Download release asset
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/release
+          gh release download "v${VERSION}" \
+            --pattern "paw-${VERSION}.tar.gz" --dir /tmp/release
+          test -s "/tmp/release/paw-${VERSION}.tar.gz"
+
+      - name: Publish to AUR
+        env:
+          AUR_SSH_KEY: ${{ secrets.AUR_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${AUR_SSH_KEY}" ]]; then
+            echo "AUR_SSH_KEY secret is not set; cannot publish to AUR." >&2
+            exit 1
+          fi
+          SHA256=$(sha256sum "/tmp/release/paw-${VERSION}.tar.gz" | cut -d' ' -f1)
+          PKGVER="${VERSION%-paw.*}"
+          PKGREL="${VERSION##*-paw.}"
+          # Install the AUR SSH key with restrictive permissions. The secret is
+          # auto-masked in logs, so never echo it back.
+          mkdir -p /root/.ssh
+          umask 077
+          printf '%s\n' "${AUR_SSH_KEY}" | tr -d '\r' > /root/.ssh/aur
+          chmod 600 /root/.ssh/aur
+          export GIT_SSH_COMMAND="ssh -i /root/.ssh/aur -o StrictHostKeyChecking=accept-new"
+          git config --global --add safe.directory '*'
+          git clone ssh://aur@aur.archlinux.org/paw.git /tmp/aur-paw
+          cp PKGBUILD /tmp/aur-paw/PKGBUILD
+          sed -i \
+            -e "s/^pkgver=.*/pkgver=${PKGVER}/" \
+            -e "s/^pkgrel=.*/pkgrel=${PKGREL}/" \
+            -e "s/^sha256sums=.*/sha256sums=('${SHA256}')/" \
+            /tmp/aur-paw/PKGBUILD
+          useradd -m aurbuild
+          chown -R aurbuild /tmp/aur-paw
+          su -c 'cd /tmp/aur-paw && makepkg --printsrcinfo' aurbuild \
+            > /tmp/aur-paw/.SRCINFO
+          cd /tmp/aur-paw
+          git config user.name "paw release"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add PKGBUILD .SRCINFO
+          git diff --staged --quiet || git commit -m "Release v${VERSION}"
+          git push

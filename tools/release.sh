@@ -5,8 +5,8 @@
 # v<base>-paw.<n>, for example v1.28.0-paw.1. <base> is the newest upstream
 # tag that the fork contains. <n> counts paw releases on that base.
 #
-# Bumps meson.build, moves ## Unreleased in CHANGELOG.md to the new version,
-# commits, and pushes master and the tag. The tag annotation records the
+# Bumps meson.build and PKGBUILD, moves ## Unreleased in CHANGELOG.md to the
+# new version, commits, and pushes master and the tag. The tag annotation records the
 # upstream commit. release.yml uses it in the release notes.
 set -euo pipefail
 
@@ -35,12 +35,21 @@ BASE="$(git describe --tags --abbrev=0 --match '[0-9]*' "${BASE_SHA}")"
 UPSTREAM_SHA="$(git rev-parse --short "${BASE_SHA}")"
 
 LAST="$(git tag -l "v${BASE}-paw.*" | sed 's/.*-paw\.//' | sort -n | tail -n 1)"
-VERSION="${BASE}-paw.$(( ${LAST:-0} + 1 ))"
+PAW_REV=$(( ${LAST:-0} + 1 ))
+VERSION="${BASE}-paw.${PAW_REV}"
 TAG="v${VERSION}"
 
 echo "==> Releasing ${TAG} (upstream base ${BASE} at ${UPSTREAM_SHA})"
 
 sed -i "s/^\( *version: \)'[^']*',/\1'${VERSION}',/" meson.build
+
+# pkgver is the upstream base and pkgrel is the paw counter. aur.yml sets the
+# checksum from the release asset.
+sed -i \
+  -e "s/^pkgver=.*/pkgver=${BASE}/" \
+  -e "s/^pkgrel=.*/pkgrel=${PAW_REV}/" \
+  -e "s/^sha256sums=.*/sha256sums=('SKIP')/" \
+  PKGBUILD
 
 if ! grep -qx '## Unreleased' CHANGELOG.md; then
   echo "error: CHANGELOG.md has no ## Unreleased heading" >&2
@@ -52,7 +61,7 @@ sed -i \
   -e "s/^## Unreleased$/## Unreleased\n\n## ${VERSION}/" \
   CHANGELOG.md
 
-git add meson.build CHANGELOG.md
+git add meson.build CHANGELOG.md PKGBUILD
 git commit -m "release: ${VERSION}"
 git tag -a "${TAG}" -m "paw ${VERSION}" -m "Upstream base: ${BASE} (${UPSTREAM_SHA})"
 
