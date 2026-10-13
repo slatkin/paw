@@ -248,3 +248,58 @@ kitty_placement_delete(struct terminal *term, const struct kitty_command *cmd)
     }
 }
 
+
+#include "kitty-test.h"
+
+UNITTEST
+{
+    /*
+     * An uppercase d variant deletes the image data of every image
+     * that has no placement left: the image that lost its last
+     * placement, and an image that was never placed. An image with a
+     * placement left (a virtual placement counts) keeps its data. A
+     * lowercase variant deletes the placements but keeps the data.
+     */
+    struct terminal term;
+    KITTY_TEST_TERM(term, 4, 8, 8, 16, 8);
+
+    /* Image 1 has a placement, image 2 was never placed. */
+    kitty_test_place(&term, 1, 1, 2, 2, 2, 2);
+    kitty_test_add_image(&term, 2, 2, 2);
+    xassert(kitty_test_placement(&term, 1) != NULL);
+    xassert(kitty_test_placement(&term, 2) == NULL);
+
+    struct kitty_command del;
+    kitty_command_init(&del);
+    del.action = KITTY_ACTION_DELETE;
+    del.delete_spec = 'A';
+    kitty_placement_delete(&term, &del);
+
+    xassert(kitty_test_placement(&term, 1) == NULL);
+    xassert(kitty_test_image(&term, 1) == NULL);
+    xassert(kitty_test_image(&term, 2) == NULL);
+
+    /* An image whose only placement is virtual keeps its data. */
+    kitty_test_add_image(&term, 3, 2, 2);
+
+    struct kitty_command put = kitty_test_put_command(3);
+    put.unicode_placeholder = kitty_some_u32(1);
+    term.normal.cursor.point.row = 2;
+    term.normal.cursor.point.col = 3;
+    kitty_test_put(&term, &put);
+
+    kitty_placement_delete(&term, &del);
+
+    xassert(kitty_test_placement(&term, 3) != NULL);
+    xassert(kitty_test_image(&term, 3) != NULL);
+
+    /* A lowercase variant keeps the image data. */
+    kitty_test_place(&term, 4, 1, 1, 1, 1, 1);
+    del.delete_spec = 'a';
+    kitty_placement_delete(&term, &del);
+
+    xassert(kitty_test_placement(&term, 4) == NULL);
+    xassert(kitty_test_image(&term, 4) != NULL);
+
+    KITTY_TEST_FINI(term);
+}
