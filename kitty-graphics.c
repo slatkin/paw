@@ -26,7 +26,7 @@
  */
 enum { KITTY_APC_MAX = 320u * 1024 * 1024 };
 
-static int
+static enum kitty_screen
 kitty_screen_idx(struct terminal *term)
 {
     /*
@@ -34,7 +34,8 @@ kitty_screen_idx(struct terminal *term)
      * addresses are stable: the interactive-resize code replaces the
      * contents of term->normal, not its address.
      */
-    return term->grid == &term->alt ? 1 : 0;
+    return term->grid == &term->alt
+        ? KITTY_SCREEN_ALT : KITTY_SCREEN_MAIN;
 }
 
 struct kitty_image_store *
@@ -60,7 +61,7 @@ kitty_command_init(struct kitty_command *cmd)
 }
 
 void
-kitty_screen_init(struct kitty_graphics *kitty, int idx)
+kitty_screen_init(struct kitty_graphics *kitty, enum kitty_screen idx)
 {
     kitty_image_store_init(&kitty->screens[idx].image_store);
     kitty_placement_store_init(&kitty->screens[idx].placement_store);
@@ -73,7 +74,7 @@ kitty_screen_init(struct kitty_graphics *kitty, int idx)
 }
 
 void
-kitty_screen_fini(struct kitty_graphics *kitty, int idx)
+kitty_screen_fini(struct kitty_graphics *kitty, enum kitty_screen idx)
 {
     kitty_placement_store_fini(&kitty->screens[idx].placement_store);
     kitty_image_store_fini(&kitty->screens[idx].image_store);
@@ -85,8 +86,11 @@ kitty_init(struct terminal *term)
     xassert(term->kitty == NULL);
     term->kitty = xcalloc(1, sizeof(struct kitty_graphics));
 
-    for (int i = 0; i < 2; i++)
+    for (enum kitty_screen i = KITTY_SCREEN_MAIN;
+         i < KITTY_SCREEN_COUNT; i++)
+    {
         kitty_screen_init(term->kitty, i);
+    }
 }
 
 void
@@ -95,8 +99,11 @@ kitty_fini(struct terminal *term)
     if (term->kitty == NULL)
         return;
 
-    for (int i = 0; i < 2; i++)
+    for (enum kitty_screen i = KITTY_SCREEN_MAIN;
+         i < KITTY_SCREEN_COUNT; i++)
+    {
         kitty_screen_fini(term->kitty, i);
+    }
 
     free(term->kitty->apc.data);
     free(term->kitty->chunk.data);
@@ -540,9 +547,10 @@ kitty_apc_end(struct terminal *term)
 
 /* The render hooks (A, B, C) live in kitty-render.c. */
 
-/* The image 'id' of screen buffer 'screen' (0 or 1), or NULL. */
+/* The image 'id' of screen buffer 'screen', or NULL. */
 static struct kitty_image *
-test_screen_image(struct terminal *term, int screen, uint32_t id)
+test_screen_image(
+    struct terminal *term, enum kitty_screen screen, uint32_t id)
 {
     return kitty_image_store_find_id(
         &term->kitty->screens[screen].image_store, KITTY_IMAGE_ID(id));
@@ -600,7 +608,7 @@ UNITTEST
     vt_from_slave(&term, (const uint8_t *)chunk3, sizeof(chunk3) - 1);
     xassert(!term.kitty->chunk.active);
 
-    struct kitty_image *img = test_screen_image(&term, 0, 1);
+    struct kitty_image *img = test_screen_image(&term, KITTY_SCREEN_MAIN, 1);
     xassert(img != NULL);
     xassert(img->width == 2 && img->height == 2);
     xassert(img->data[0] == 0xff000000u);
@@ -628,16 +636,18 @@ UNITTEST
     xassert(!term.kitty->chunk.active);
 
     /* The delete command also ran. */
-    xassert(test_screen_image(&term, 0, 9) == NULL);
+    xassert(test_screen_image(&term, KITTY_SCREEN_MAIN, 9) == NULL);
 
     /* The partial data is discarded. */
-    xassert(tll_length(term.kitty->screens[0].image_store.images) == 0);
+    xassert(tll_length(
+                term.kitty->screens[KITTY_SCREEN_MAIN]
+                    .image_store.images) == 0);
 
     /* The next complete transfer starts from a fresh state. */
     static const char done[] =
         "\x1b_Ga=t,i=8,f=24,s=1,v=1;AAAA\x1b\\";
     vt_from_slave(&term, (const uint8_t *)done, sizeof(done) - 1);
-    xassert(test_screen_image(&term, 0, 8) != NULL);
+    xassert(test_screen_image(&term, KITTY_SCREEN_MAIN, 8) != NULL);
 
     kitty_fini(&term);
 }
@@ -656,7 +666,9 @@ UNITTEST
     vt_from_slave(&term, (const uint8_t *)frame, sizeof(frame) - 1);
     vt_from_slave(&term, (const uint8_t *)relative, sizeof(relative) - 1);
 
-    xassert(tll_length(term.kitty->screens[0].image_store.images) == 0);
+    xassert(tll_length(
+                term.kitty->screens[KITTY_SCREEN_MAIN]
+                    .image_store.images) == 0);
 
     kitty_fini(&term);
 }
@@ -684,7 +696,7 @@ UNITTEST
     vt_from_slave(&term, (const uint8_t *)chunk3, sizeof(chunk3) - 1);
     xassert(!term.kitty->chunk.active);
 
-    struct kitty_image *img = test_screen_image(&term, 0, 1);
+    struct kitty_image *img = test_screen_image(&term, KITTY_SCREEN_MAIN, 1);
     xassert(img != NULL);
     xassert(img->width == 2 && img->height == 2);
     xassert(img->data[0] == 0xff000000u);
@@ -729,7 +741,7 @@ UNITTEST
     vt_from_slave(&term, (const uint8_t *)chunk3, sizeof(chunk3) - 1);
     xassert(!term.kitty->chunk.active);
 
-    struct kitty_image *img = test_screen_image(&term, 0, 2);
+    struct kitty_image *img = test_screen_image(&term, KITTY_SCREEN_MAIN, 2);
     xassert(img != NULL);
     xassert(img->width == 2 && img->height == 2);
 

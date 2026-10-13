@@ -12,6 +12,16 @@
 enum { KITTY_CONTROL_DATA_MAX = 1024 };
 
 /*
+ * The two screen buffers with separate graphics state. MAIN is the
+ * normal screen, ALT the alternate one.
+ */
+enum kitty_screen {
+    KITTY_SCREEN_MAIN = 0,
+    KITTY_SCREEN_ALT = 1,
+    KITTY_SCREEN_COUNT,
+};
+
+/*
  * The graphics state of one terminal. It is private to the kitty
  * graphics code; only the internal headers name it.
  */
@@ -42,7 +52,7 @@ struct kitty_graphics {
     struct {
         struct kitty_image_store image_store;
         struct kitty_placement_store placement_store;
-    } screens[2];
+    } screens[KITTY_SCREEN_COUNT];
 
     /* Reflow state. */
     struct {
@@ -54,9 +64,11 @@ struct kitty_graphics {
     } reflow;
 };
 
-/* Init/fini the stores of one screen buffer (0 or 1). */
-void kitty_screen_init(struct kitty_graphics *kitty, int idx);
-void kitty_screen_fini(struct kitty_graphics *kitty, int idx);
+/* Init/fini the stores of one screen buffer. */
+void kitty_screen_init(
+    struct kitty_graphics *kitty, enum kitty_screen idx);
+void kitty_screen_fini(
+    struct kitty_graphics *kitty, enum kitty_screen idx);
 
 /* Drop an in-progress chunked transfer. */
 void kitty_chunk_reset(struct kitty_graphics *kitty);

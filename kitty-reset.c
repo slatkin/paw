@@ -11,8 +11,8 @@ kitty_alt_screen_clear(struct terminal *term)
         return;
 
     /* The alternate screen always starts empty. */
-    kitty_screen_fini(term->kitty, 1);
-    kitty_screen_init(term->kitty, 1);
+    kitty_screen_fini(term->kitty, KITTY_SCREEN_ALT);
+    kitty_screen_init(term->kitty, KITTY_SCREEN_ALT);
 }
 
 void
@@ -21,7 +21,9 @@ kitty_reset(struct terminal *term)
     if (term->kitty == NULL)
         return;
 
-    for (int i = 0; i < 2; i++) {
+    for (enum kitty_screen i = KITTY_SCREEN_MAIN;
+         i < KITTY_SCREEN_COUNT; i++)
+    {
         kitty_screen_fini(term->kitty, i);
         kitty_screen_init(term->kitty, i);
     }
@@ -40,7 +42,9 @@ kitty_cell_size_changed(struct terminal *term)
      * The cell span of a placement stays; only the scaled cache is
      * rebuilt at the new cell size, on the next frame.
      */
-    for (int i = 0; i < 2; i++) {
+    for (enum kitty_screen i = KITTY_SCREEN_MAIN;
+         i < KITTY_SCREEN_COUNT; i++)
+    {
         struct kitty_placement_store *store =
             &term->kitty->screens[i].placement_store;
         tll_foreach(store->placements, it)
@@ -97,7 +101,7 @@ kitty_reflow_end(struct terminal *term)
     const int delta = new_sb - kitty->reflow.cursor_sb;
 
     kitty_placement_reflow(
-        term, &kitty->screens[0].placement_store,
+        term, &kitty->screens[KITTY_SCREEN_MAIN].placement_store,
         kitty->reflow.old_offset, kitty->reflow.old_num_rows,
         kitty->reflow.old_screen_rows, delta);
 }
@@ -120,19 +124,19 @@ UNITTEST
     /* Image 1 and image 2 on the main screen. */
     vt_from_slave(&term, (const uint8_t *)img, sizeof(img) - 1);
     vt_from_slave(&term, (const uint8_t *)img2, sizeof(img2) - 1);
-    xassert(kitty_image_store_find_id(&term.kitty->screens[0].image_store, KITTY_IMAGE_ID(1)) != NULL);
-    xassert(kitty_image_store_find_id(&term.kitty->screens[0].image_store, KITTY_IMAGE_ID(2)) != NULL);
+    xassert(kitty_image_store_find_id(&term.kitty->screens[KITTY_SCREEN_MAIN].image_store, KITTY_IMAGE_ID(1)) != NULL);
+    xassert(kitty_image_store_find_id(&term.kitty->screens[KITTY_SCREEN_MAIN].image_store, KITTY_IMAGE_ID(2)) != NULL);
 
     /* Image 1 on the alternate screen too (same id, separate store). */
     term.grid = &term.alt;
     vt_from_slave(&term, (const uint8_t *)img, sizeof(img) - 1);
-    xassert(kitty_image_store_find_id(&term.kitty->screens[1].image_store, KITTY_IMAGE_ID(1)) != NULL);
+    xassert(kitty_image_store_find_id(&term.kitty->screens[KITTY_SCREEN_ALT].image_store, KITTY_IMAGE_ID(1)) != NULL);
 
     kitty_alt_screen_clear(&term);
 
-    xassert(tll_length(term.kitty->screens[1].image_store.images) == 0);
-    xassert(kitty_image_store_find_id(&term.kitty->screens[0].image_store, KITTY_IMAGE_ID(1)) != NULL);
-    xassert(kitty_image_store_find_id(&term.kitty->screens[0].image_store, KITTY_IMAGE_ID(2)) != NULL);
+    xassert(tll_length(term.kitty->screens[KITTY_SCREEN_ALT].image_store.images) == 0);
+    xassert(kitty_image_store_find_id(&term.kitty->screens[KITTY_SCREEN_MAIN].image_store, KITTY_IMAGE_ID(1)) != NULL);
+    xassert(kitty_image_store_find_id(&term.kitty->screens[KITTY_SCREEN_MAIN].image_store, KITTY_IMAGE_ID(2)) != NULL);
 
     kitty_fini(&term);
 }
@@ -160,14 +164,14 @@ UNITTEST
     term.grid = &term.normal;
     vt_from_slave(&term, (const uint8_t *)chunk, sizeof(chunk) - 1);
 
-    xassert(tll_length(term.kitty->screens[0].image_store.images) == 1);
-    xassert(tll_length(term.kitty->screens[1].image_store.images) == 1);
+    xassert(tll_length(term.kitty->screens[KITTY_SCREEN_MAIN].image_store.images) == 1);
+    xassert(tll_length(term.kitty->screens[KITTY_SCREEN_ALT].image_store.images) == 1);
     xassert(term.kitty->chunk.active);
 
     kitty_reset(&term);
 
-    xassert(tll_length(term.kitty->screens[0].image_store.images) == 0);
-    xassert(tll_length(term.kitty->screens[1].image_store.images) == 0);
+    xassert(tll_length(term.kitty->screens[KITTY_SCREEN_MAIN].image_store.images) == 0);
+    xassert(tll_length(term.kitty->screens[KITTY_SCREEN_ALT].image_store.images) == 0);
     xassert(!term.kitty->chunk.active);
 
     kitty_fini(&term);
@@ -209,12 +213,12 @@ UNITTEST
     static const char img[] =
         "\x1b_Ga=t,i=1,f=24,s=1,v=1;AAAA\x1b\\";
     vt_from_slave(&term, (const uint8_t *)img, sizeof(img) - 1);
-    xassert(kitty_image_store_find_id(&term.kitty->screens[1].image_store, KITTY_IMAGE_ID(1)) != NULL);
+    xassert(kitty_image_store_find_id(&term.kitty->screens[KITTY_SCREEN_ALT].image_store, KITTY_IMAGE_ID(1)) != NULL);
 
     term_reset(&term, false);
 
     xassert(term.grid == &term.normal);
-    xassert(tll_length(term.kitty->screens[1].image_store.images) == 0);
+    xassert(tll_length(term.kitty->screens[KITTY_SCREEN_ALT].image_store.images) == 0);
 
     kitty_fini(&term);
 }
