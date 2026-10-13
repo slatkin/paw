@@ -17,7 +17,8 @@
  * deliberately larger than any real client needs.
  */
 enum {
-    /* Maximum number of placements per screen (main or alternate). */
+    /* Placements kept per screen (main or alternate). A new placement
+     * over this count evicts the oldest one. */
     KITTY_MAX_PLACEMENTS = 4096,
 
     /*

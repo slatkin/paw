@@ -754,9 +754,9 @@ image.
 
 ### Placement limits
 
-Each screen buffer holds at most 4096 placements. A command that would add
-more fails with `EINVAL:too many placements`, and paw writes a warning to its
-log.
+Each screen buffer holds at most 4096 placements. When a new placement would
+exceed this count, paw deletes the oldest placement of that screen buffer
+first, and writes a warning to its log.
 
 paw keeps a scaled copy of each placed image, for fast drawing. Each screen
 buffer uses at most 128 MB for these copies. When a copy would exceed the

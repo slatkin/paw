@@ -200,12 +200,6 @@ kitty_placement_put(
 
     struct kitty_placement_store *store = kitty_placement_store_for(term);
 
-    if ((size_t)tll_length(store->placements) >= KITTY_MAX_PLACEMENTS) {
-        LOG_WARN("kitty graphics: placement limit (%d) reached",
-                 KITTY_MAX_PLACEMENTS);
-        return "EINVAL:too many placements";
-    }
-
     /* Source rectangle: x, y, w, h with defaults, intersected with the
      * image. All arithmetic is in 64-bit to stay wrap-safe. */
     const int64_t image_w = image->width;
@@ -281,6 +275,18 @@ kitty_placement_put(
         kitty_placement_unlink(store, &it->item);
         kitty_placement_remove(store, it);
         break;
+    }
+
+    /* Bound the memory use. A full screen drops its oldest placement. */
+    if ((size_t)tll_length(store->placements) >= KITTY_MAX_PLACEMENTS) {
+        LOG_WARN("kitty graphics: placement limit (%d) reached, "
+                 "dropping the oldest placement", KITTY_MAX_PLACEMENTS);
+        tll_foreach(store->placements, it) {
+            kitty_placement_dirty(term, &it->item);
+            kitty_placement_unlink(store, &it->item);
+            kitty_placement_remove(store, it);
+            break;
+        }
     }
 
     tll_push_back(store->placements, p);
