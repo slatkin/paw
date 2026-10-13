@@ -288,10 +288,12 @@ kitty_placement_put(
     {
         LOG_WARN("kitty graphics: placement limit (%d) reached, "
                  "dropping the oldest placement", KITTY_MAX_PLACEMENTS);
-        struct kitty_placement *oldest = &tll_front(store->placements);
-        kitty_placement_dirty(term, oldest);
-        kitty_placement_unlink(store, oldest);
-        kitty_placement_remove(store, store->placements.head);
+        tll_foreach(store->placements, it) {
+            kitty_placement_dirty(term, &it->item);
+            kitty_placement_unlink(store, &it->item);
+            kitty_placement_remove(store, it);
+            break;
+        }
     }
 
     tll_push_back(store->placements, p);
