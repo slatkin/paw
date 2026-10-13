@@ -7,7 +7,7 @@ pkgdesc="Wayland terminal emulator, a fork of foot, with the kitty graphics prot
 arch=('x86_64')
 url="https://github.com/slatkin/paw"
 license=('MIT')
-depends=('fcft' 'fontconfig' 'libutf8proc' 'libxkbcommon' 'ncurses' 'pixman' 'wayland')
+depends=('fcft' 'fontconfig' 'libpng' 'libutf8proc' 'libxkbcommon' 'ncurses' 'pixman' 'wayland' 'zlib')
 makedepends=('meson' 'ninja' 'python' 'scdoc' 'tllist' 'wayland-protocols')
 optdepends=('bash-completion: completion for positional arguments'
             'libnotify: desktop notifications'
