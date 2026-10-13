@@ -69,6 +69,10 @@ A placement with `z >= 0` SHALL be drawn over the text. A placement with `-10737
 - **WHEN** image 4 has one placement and a program sends `a=d,d=I,i=4`
 - **THEN** the placement disappears and image 4 no longer exists
 
+#### Scenario: Uppercase keeps an image that was never placed
+- **WHEN** image 5 was transmitted but never placed, and a program sends `a=d,d=A`
+- **THEN** image 5 still exists
+
 #### Scenario: Delete at a cell
 - **WHEN** two placements overlap the cell at column 3, row 4 and a program sends `a=d,d=p,x=3,y=4`
 - **THEN** both placements disappear and other placements stay
@@ -124,3 +128,10 @@ When the window width changes and the text reflows, paw SHALL move each placemen
 #### Scenario: Window narrower
 - **WHEN** an image is under a line of output and the window is made narrower so that earlier lines wrap
 - **THEN** the image is still visible and not deleted
+
+### Requirement: Placement count limit
+Each screen SHALL hold at most 4096 placements. When a new placement would exceed this count, paw SHALL delete the oldest placement of that screen first. The command that adds the placement SHALL still succeed.
+
+#### Scenario: Placement over the limit
+- **WHEN** the main screen holds 4096 placements and a program places one more
+- **THEN** the oldest placement is gone, and the new placement exists, with no error reply
