@@ -130,8 +130,9 @@ This prints nothing on a clean tree.
 
 ### Kitty graphics hooks
 
-paw adds short calls to upstream files for the kitty graphics feature. After
-a merge, check that each call is still present and correct:
+paw adds short calls and a few state-table entries to upstream files for the
+kitty graphics feature. After a merge, check that each call and entry is
+still present and correct:
 
 | File | Function | Hook |
 | --- | --- | --- |
@@ -147,6 +148,14 @@ a merge, check that each call is still present and correct:
 | `terminal.c` | `term_scroll_partial`, `term_scroll_reverse_partial` | `kitty_scroll_up()`, `kitty_scroll_down()` |
 | `vt.c` | `anywhere`, `state_escape_switch` | `kitty_apc_start()` |
 | `vt.c` | `state_apc_string_switch` | `kitty_apc_put()`, `kitty_apc_end()` |
+| `vt.c` | `anywhere` | `0x80 ... 0x9e` no longer covers `0x9f`, which starts APC |
+| `vt.c` | `state_escape_switch` | `0x5e` no longer covers `0x5f`, which starts APC |
+| `vt.c` | `enum state`, `state_names` | `STATE_APC_STRING` and its name |
+| `vt.c` | `vt_from_slave` | dispatch `case STATE_APC_STRING` |
+
+`state_apc_string_switch` is a copy of `state_osc_string_switch` (design D2 in
+`openspec/changes/archive/2026-10-12-add-kitty-graphics/design.md`). After a
+merge, compare the two switches and port any OSC change to the APC copy.
 
 The command below lists these call sites, and the other `kitty_` symbols in
 upstream files:
