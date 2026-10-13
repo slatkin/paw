@@ -1,0 +1,45 @@
+name: Release
+
+# Runs on each paw tag (v<base>-paw.<n>), which tools/release.sh pushes.
+# Builds a source tarball and creates the GitHub release. The AUR package is
+# published separately by aur.yml, so an AUR failure cannot block a release.
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Full history and tags. The release notes read the tag annotation.
+          fetch-depth: 0
+
+      - name: Build source tarball
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
+          git archive --format=tar.gz --prefix="paw-${VERSION}/" \
+            -o "paw-${VERSION}.tar.gz" "${GITHUB_REF_NAME}"
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          # Notes: the tag annotation (upstream base), then the changelog section.
+          {
+            git tag -l --format='%(contents)' "${GITHUB_REF_NAME}"
+            echo
+            awk -v h="## ${VERSION}" '$0 == h {f = 1; next} /^## / && f {exit} f' CHANGELOG.md
+          } > notes.md
+          gh release create "${GITHUB_REF_NAME}" "paw-${VERSION}.tar.gz" \
+            --title "paw ${VERSION}" --notes-file notes.md --verify-tag
