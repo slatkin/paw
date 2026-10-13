@@ -6,3 +6,4 @@
 .claude/
 .pi/
 .zvec-grep/
+/compile_commands.json

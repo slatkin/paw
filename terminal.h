@@ -399,6 +399,8 @@ struct colors {
     enum which_color_theme active_theme;
 };
 
+struct kitty_graphics;
+
 struct terminal {
     struct fdm *fdm;
     struct reaper *reaper;
@@ -424,6 +426,7 @@ struct terminal {
     struct grid *grid;
     struct grid normal;
     struct grid alt;
+    struct kitty_graphics *kitty;
 
     int cols;   /* number of columns */
     int rows;   /* number of rows */
