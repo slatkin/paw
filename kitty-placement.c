@@ -191,6 +191,56 @@ kitty_placement_dirty(struct terminal *term, struct kitty_placement *p)
     }
 }
 
+/*
+ * Cursor movement policy: C=0 (default) moves the cursor to the cell
+ * after the image's columns, on the image's last row. C=1 leaves the
+ * cursor alone.
+ */
+static void
+move_cursor_after_placement(
+    struct terminal *term, const struct kitty_command *cmd,
+    const struct kitty_placement *added)
+{
+    if (cmd->cursor.set && cmd->cursor.value != 0)
+        return;
+
+    if (added->cols > 0)
+        term_cursor_right(term, added->cols);
+
+    if (added->rows <= 1)
+        return;
+
+    const int start = term->scroll_region.start;
+    const int end = term->scroll_region.end;
+    const int cur_row = term->grid->cursor.point.row;
+    const int target = cur_row + added->rows - 1;
+
+    if (cur_row >= start && cur_row < end && target >= end) {
+        /*
+         * The move goes past the bottom of the scroll region: scroll
+         * the region, so that the text and the images move, and leave
+         * the cursor on the region's bottom row.
+         */
+        int amount = target - (end - 1);
+        if (amount > end - start)
+            amount = end - start;
+        term_scroll(term, amount);
+        term_cursor_to(term, end - 1, term->grid->cursor.point.col);
+        return;
+    }
+
+    /* Stop at the bottom of the scroll region when the cursor is
+     * inside it, and at the bottom of the screen otherwise. */
+    const int bottom =
+        (cur_row >= start && cur_row < end) ? end : term->rows;
+    int stop = target;
+    if (stop >= bottom)
+        stop = bottom - 1;
+
+    if (stop > cur_row)
+        term_cursor_to(term, stop, term->grid->cursor.point.col);
+}
+
 const char *
 kitty_placement_put(
     struct terminal *term, const struct kitty_command *cmd,
@@ -303,50 +353,7 @@ kitty_placement_put(
 
     if (!virtual_placement) {
         kitty_placement_dirty(term, added);
-
-        /* Cursor movement policy: C=0 (default) moves the cursor to the
-         * cell after the image's columns, on the image's last row. C=1
-         * leaves the cursor alone. */
-        if (!cmd->cursor.set || cmd->cursor.value == 0) {
-            if (added->cols > 0)
-                term_cursor_right(term, added->cols);
-
-            if (added->rows > 1) {
-                const int start = term->scroll_region.start;
-                const int end = term->scroll_region.end;
-                const int cur_row = term->grid->cursor.point.row;
-                const int target = cur_row + added->rows - 1;
-
-                if (cur_row >= start && cur_row < end && target >= end) {
-                    /*
-                     * The move goes past the bottom of the scroll
-                     * region: scroll the region, so that the text and
-                     * the images move, and leave the cursor on the
-                     * region's bottom row.
-                     */
-                    int amount = target - (end - 1);
-                    if (amount > end - start)
-                        amount = end - start;
-                    term_scroll(term, amount);
-                    term_cursor_to(
-                        term, end - 1, term->grid->cursor.point.col);
-                } else {
-                    /* Stop at the bottom of the scroll region when the
-                     * cursor is inside it, and at the bottom of the
-                     * screen otherwise. */
-                    const int bottom =
-                        (cur_row >= start && cur_row < end) ? end : term->rows;
-                    int stop = target;
-                    if (stop >= bottom)
-                        stop = bottom - 1;
-
-                    if (stop > cur_row) {
-                        term_cursor_to(
-                            term, stop, term->grid->cursor.point.col);
-                    }
-                }
-            }
-        }
+        move_cursor_after_placement(term, cmd, added);
     }
 
     return NULL;
