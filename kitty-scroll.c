@@ -155,44 +155,6 @@ kitty_placement_reflow(
     } while (0)
 
 /*
- * Scroll support.
- *
- * The hooks run from term_scroll_partial() and
- * term_scroll_reverse_partial(), before the grid offset is updated.
- * All arithmetic below uses the pre-scroll offset.
- *
- * The grid is a ring of num_rows rows; the screen occupies the ring
- * rows [offset, offset + screen_rows) and the scrollback the ring
- * rows before them. A placement occupies consecutive ring rows from
- * its anchor and is drawn as one rigid rectangle over the text, so
- * only its anchor row has to follow the text line it was placed on.
- * A scroll changes ring rows in three places:
- *
- *  - scroll up destroys the `rows` oldest scrollback rows (they are
- *    erased as the scrolled-in lines) and, with a top margin, rotates
- *    the fixed-margin content `rows` ring rows forward while the top
- *    rows of the region rotate into the scrollback;
- *  - scroll down destroys the `rows` newest scrollback rows and
- *    rotates the fixed-margin content `rows` ring rows back, while
- *    the bottom rows of the region are pushed below the screen;
- *  - the erased scrolled-in lines themselves.
- *
- * Policy (kitty's scroll_filter_* functions, adapted to foot's ring):
- *  - an anchor in the scrollback keeps its ring row; it is deleted
- *    when its content line is destroyed;
- *  - a placement fully inside the scroll region moves with the region
- *    (its ring row is unchanged), and follows the rotation when its
- *    anchor line enters the scrollback, hanging from the top of the
- *    screen like in kitty;
- *  - any other placement keeps the same screen position, like kitty
- *    freezes refs that are not fully inside the region: an anchor in
- *    a fixed margin follows the margin row swap, and a bottom-edge
- *    crossing anchor moves by the same amount;
- *  - a fully-inside placement whose anchor line is pushed below the
- *    region bottom is deleted (kitty removes refs that move out of
- *    their region).
- */
-/*
  * The state shared by the scroll prologues: the placement store of
  * the current screen and the ring geometry of the pre-scroll grid.
  */
@@ -259,6 +221,44 @@ kitty_scroll_anchor(
     return *sb_top - ctx->history_rows;
 }
 
+/*
+ * Scroll support.
+ *
+ * The hooks run from term_scroll_partial() and
+ * term_scroll_reverse_partial(), before the grid offset is updated.
+ * All arithmetic below uses the pre-scroll offset.
+ *
+ * The grid is a ring of num_rows rows; the screen occupies the ring
+ * rows [offset, offset + screen_rows) and the scrollback the ring
+ * rows before them. A placement occupies consecutive ring rows from
+ * its anchor and is drawn as one rigid rectangle over the text, so
+ * only its anchor row has to follow the text line it was placed on.
+ * A scroll changes ring rows in three places:
+ *
+ *  - scroll up destroys the `rows` oldest scrollback rows (they are
+ *    erased as the scrolled-in lines) and, with a top margin, rotates
+ *    the fixed-margin content `rows` ring rows forward while the top
+ *    rows of the region rotate into the scrollback;
+ *  - scroll down destroys the `rows` newest scrollback rows and
+ *    rotates the fixed-margin content `rows` ring rows back, while
+ *    the bottom rows of the region are pushed below the screen;
+ *  - the erased scrolled-in lines themselves.
+ *
+ * Policy (kitty's scroll_filter_* functions, adapted to foot's ring):
+ *  - an anchor in the scrollback keeps its ring row; it is deleted
+ *    when its content line is destroyed;
+ *  - a placement fully inside the scroll region moves with the region
+ *    (its ring row is unchanged), and follows the rotation when its
+ *    anchor line enters the scrollback, hanging from the top of the
+ *    screen like in kitty;
+ *  - any other placement keeps the same screen position, like kitty
+ *    freezes refs that are not fully inside the region: an anchor in
+ *    a fixed margin follows the margin row swap, and a bottom-edge
+ *    crossing anchor moves by the same amount;
+ *  - a fully-inside placement whose anchor line is pushed below the
+ *    region bottom is deleted (kitty removes refs that move out of
+ *    their region).
+ */
 void
 kitty_scroll_up(struct terminal *term, struct scroll_region region, int rows)
 {
