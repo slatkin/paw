@@ -43,7 +43,9 @@ jobs:
             libxkbcommon pixman freetype2 fontconfig harfbuzz libutf8proc \
             wayland wayland-protocols fcft tllist check \
             ttf-hack noto-fonts-emoji \
-            codespell mypy ruff python-lizard
+            codespell mypy ruff python-pip
+          # The Arch repositories do not package lizard. Pin the version tested locally.
+          pip install --break-system-packages --root-user-action=ignore lizard==1.24.1
 
       - uses: actions/checkout@v7
         with:
