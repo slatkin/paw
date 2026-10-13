@@ -192,41 +192,92 @@ kitty_placement_reflow(
  *    region bottom is deleted (kitty removes refs that move out of
  *    their region).
  */
+/*
+ * The state shared by the scroll prologues: the placement store of
+ * the current screen and the ring geometry of the pre-scroll grid.
+ */
+struct kitty_scroll_ctx {
+    struct kitty_placement_store *store;
+    int num_rows;
+    int screen_rows;
+    int offset;      /* pre-scroll ring offset */
+    int history_rows;
+    bool has_margins;
+};
+
+/*
+ * Shared prologue of kitty_scroll_up() and kitty_scroll_down():
+ * validate the arguments and fill the context. Returns false when the
+ * caller must return without any change.
+ */
+static bool
+kitty_scroll_ctx_init(
+    struct terminal *term, struct scroll_region region, int rows,
+    struct kitty_scroll_ctx *ctx)
+{
+    if (term->kitty == NULL || rows <= 0)
+        return false;
+
+    ctx->store = kitty_placement_store_for(term);
+    if (tll_length(ctx->store->placements) == 0)
+        return false;
+
+    ctx->num_rows = term->grid->num_rows;
+    ctx->screen_rows = term->rows;
+
+    if (ctx->num_rows <= 0 || ctx->screen_rows <= 0 ||
+        rows > ctx->screen_rows)
+    {
+        return false;
+    }
+    if (region.start < 0 || region.end > ctx->screen_rows ||
+        region.start >= region.end)
+    {
+        return false;
+    }
+
+    ctx->offset = term->grid->offset; /* pre-scroll */
+    ctx->history_rows = ctx->num_rows - ctx->screen_rows;
+    ctx->has_margins =
+        region.start != 0 || region.end != ctx->screen_rows;
+    return true;
+}
+
+/*
+ * The anchor row of a placement, in scrollback-relative coordinates:
+ * *sb_top counts from the oldest scrollback row, and the returned s
+ * counts from the top of the screen (negative in the scrollback).
+ */
+static int
+kitty_scroll_anchor(
+    const struct kitty_scroll_ctx *ctx, const struct kitty_placement *p,
+    int *sb_top)
+{
+    *sb_top =
+        (p->row - (ctx->offset + ctx->screen_rows) + ctx->num_rows) &
+        (ctx->num_rows - 1);
+    return *sb_top - ctx->history_rows;
+}
+
 void
 kitty_scroll_up(struct terminal *term, struct scroll_region region, int rows)
 {
-    if (term->kitty == NULL || rows <= 0)
+    struct kitty_scroll_ctx ctx;
+    if (!kitty_scroll_ctx_init(term, region, rows, &ctx))
         return;
 
-    struct kitty_placement_store *store = kitty_placement_store_for(term);
-    if (tll_length(store->placements) == 0)
-        return;
-
-    const struct grid *grid = term->grid;
-    const int num_rows = grid->num_rows;
-    const int screen_rows = term->rows;
-
-    if (num_rows <= 0 || screen_rows <= 0 || rows > screen_rows)
-        return;
-    if (region.start < 0 || region.end > screen_rows ||
-        region.start >= region.end)
-    {
-        return;
-    }
-
-    const int offset = grid->offset; /* pre-scroll */
-    const int history_rows = num_rows - screen_rows;
-    const bool has_margins =
-        region.start != 0 || region.end != screen_rows;
+    struct kitty_placement_store *store = ctx.store;
+    const int num_rows = ctx.num_rows;
+    const int offset = ctx.offset;
+    const bool has_margins = ctx.has_margins;
 
     tll_foreach(store->placements, it) {
         struct kitty_placement *p = &it->item;
         if (p->virtual_placement)
             continue;
 
-        const int sb_top =
-            (p->row - (offset + screen_rows) + num_rows) & (num_rows - 1);
-        const int s = sb_top - history_rows; /* < 0: in the scrollback */
+        int sb_top;
+        const int s = kitty_scroll_anchor(&ctx, p, &sb_top);
 
         /*
          * The anchor is in the scrollback and keeps its ring row,
@@ -278,38 +329,23 @@ kitty_scroll_up(struct terminal *term, struct scroll_region region, int rows)
 void
 kitty_scroll_down(struct terminal *term, struct scroll_region region, int rows)
 {
-    if (term->kitty == NULL || rows <= 0)
+    struct kitty_scroll_ctx ctx;
+    if (!kitty_scroll_ctx_init(term, region, rows, &ctx))
         return;
 
-    struct kitty_placement_store *store = kitty_placement_store_for(term);
-    if (tll_length(store->placements) == 0)
-        return;
-
-    const struct grid *grid = term->grid;
-    const int num_rows = grid->num_rows;
-    const int screen_rows = term->rows;
-
-    if (num_rows <= 0 || screen_rows <= 0 || rows > screen_rows)
-        return;
-    if (region.start < 0 || region.end > screen_rows ||
-        region.start >= region.end)
-    {
-        return;
-    }
-
-    const int offset = grid->offset; /* pre-scroll */
-    const int history_rows = num_rows - screen_rows;
-    const bool has_margins =
-        region.start != 0 || region.end != screen_rows;
+    struct kitty_placement_store *store = ctx.store;
+    const int num_rows = ctx.num_rows;
+    const int screen_rows = ctx.screen_rows;
+    const int history_rows = ctx.history_rows;
+    const bool has_margins = ctx.has_margins;
 
     tll_foreach(store->placements, it) {
         struct kitty_placement *p = &it->item;
         if (p->virtual_placement)
             continue;
 
-        const int sb_top =
-            (p->row - (offset + screen_rows) + num_rows) & (num_rows - 1);
-        const int s = sb_top - history_rows; /* < 0: in the scrollback */
+        int sb_top;
+        const int s = kitty_scroll_anchor(&ctx, p, &sb_top);
 
         /*
          * The anchor is in the scrollback and keeps its ring row,
