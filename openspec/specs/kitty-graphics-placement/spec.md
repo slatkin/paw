@@ -58,7 +58,7 @@ A placement with `z >= 0` SHALL be drawn over the text. A placement with `-10737
 - **THEN** the red cell shows red, and the default cell shows the image
 
 ### Requirement: Deletion
-`a=d` SHALL delete placements as the `d` key selects: `a` (default; all visible), `i` (image id, and placement id when `p` is given), `n` (newest image with number `I`), `c` (at the cursor cell), `p` (at cell `x,y`, 1-based), `q` (at cell `x,y` with z-index `z`), `r` (image ids from `x` to `y`), `x` (in column `x`), `y` (in row `y`), `z` (with z-index `z`). Uppercase variants SHALL also delete the image data when no placement of the image is left.
+`a=d` SHALL delete placements as the `d` key selects: `a` (default; all visible), `i` (image id, and placement id when `p` is given), `n` (newest image with number `I`), `c` (at the cursor cell), `p` (at cell `x,y`, 1-based), `q` (at cell `x,y` with z-index `z`), `r` (image ids from `x` to `y`), `x` (in column `x`), `y` (in row `y`), `z` (with z-index `z`). Uppercase variants SHALL also delete the image data of each image that has no placement left after the command. An image that never had a placement is deleted only by `I`, `N`, and `R` (without `p`). The other uppercase variants SHALL leave such an image stored.
 
 #### Scenario: Delete all visible
 - **WHEN** a program sends `a=d`
@@ -67,6 +67,10 @@ A placement with `z >= 0` SHALL be drawn over the text. A placement with `-10737
 #### Scenario: Delete and free
 - **WHEN** image 4 has one placement and a program sends `a=d,d=I,i=4`
 - **THEN** the placement disappears and image 4 no longer exists
+
+#### Scenario: Uppercase keeps an image that was never placed
+- **WHEN** image 5 was transmitted but never placed, and a program sends `a=d,d=A`
+- **THEN** image 5 still exists
 
 #### Scenario: Delete at a cell
 - **WHEN** two placements overlap the cell at column 3, row 4 and a program sends `a=d,d=p,x=3,y=4`

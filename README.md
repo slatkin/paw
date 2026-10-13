@@ -680,7 +680,8 @@ cursor), `p` (at cell `x,y`), `q` (at cell `x,y` with z-index `z`), `x`
 (column `x`), `y` (row `y`), and `z` (z-index `z`). Every selector has an
 uppercase form: `A`, `I`, `N`, `R`, `C`, `P`, `Q`, `X`, `Y`, `Z`. An
 uppercase selector also frees the image data of every image that is left
-with no placement. The selectors `i`/`I`, `n`/`N`, and `r`/`R` also delete
+with no placement. An image that never had a placement is freed only by `I`,
+`N`, and `R` (without `p`). The selectors `i`/`I`, `n`/`N`, and `r`/`R` also delete
 virtual placements. The selectors `a`, `c`, `p`, `q`, `x`, `y`, and `z`
 do not affect virtual placements. The animation selector `d=f` changes
 nothing.
