@@ -1,0 +1,790 @@
+{
+ "terminal": "kitty 0.49.2 created by Kovid Goyal",
+ "cases": {
+  "query_rgb": {
+   "replies": [
+    "i=31;OK"
+   ],
+   "cursor": [
+    1,
+    1
+   ],
+   "files": {}
+  },
+  "query_keeps_image": {
+   "replies": [
+    "i=31;ENODATA:Insufficient image data: 3 < 12",
+    "i=31;OK"
+   ],
+   "cursor": [
+    1,
+    1
+   ],
+   "files": {}
+  },
+  "other_strings_ignored": {
+   "replies": [],
+   "cursor": [
+    1,
+    4
+   ],
+   "files": {}
+  },
+  "bad_number": {
+   "replies": [],
+   "cursor": [
+    1,
+    1
+   ],
+   "files": {}
+  },
+  "unknown_key": {
+   "replies": [
+    "i=1;OK"
+   ],
+   "cursor": [
+    1,
+    1
+   ],
+   "files": {}
+  },
+  "rgb": {
+   "replies": [
+    "i=7;OK"
+   ],
+   "cursor": [
+    1,
+    1
+   ],
+   "files": {}
+  },
+  "rgba_wrong_length": {
+   "replies": [
+    "i=7;ENODATA:Insufficient image data: 300 < 400"
+   ],
+   "cursor": [
+    1,
+    1
+   ],
+   "files": {}
+  },
+  "png": {
+   "replies": [
+    "i=7;OK"
+   ],
+   "cursor": [
+    1,
+    1
+   ],
+   "files": {}
+  },
+  "png_invalid": {
+   "replies": [
+    "i=7;EBADPNG:Not a PNG file"
+   ],
+   "cursor": [
+    1,
+    1
+   ],
+   "files": {}
+  },
+  "zlib": {
+   "replies": [
+    "i=7;OK"
+   ],
+   "cursor": [
+    1,
+    1
+   ],
+   "files": {}
+  },
+  "zlib_corrupt": {
+   "replies": [
+    "i=7;EINVAL:Failed to inflate image data with error: Z_DATA_ERROR"
+   ],
+   "cursor": [
+    1,
+    1
+   ],
+   "files": {}
+  },
+  "bad_compression": {
+   "replies": [],
+   "cursor": [
+    1,
+    1
+   ],
+   "files": {}
+  },
+  "chunked_three": {
+   "replies": [
+    "i=7;OK"
+   ],
+   "cursor": [
+    1,
+    1
+   ],
+   "files": {}
+  },
+  "chunked_cancel": {
+   "replies": [
+    "i=7;ENOENT:Put command refers to non-existent image with id: 7 and number: 0"
+   ],
+   "cursor": [
+    1,
+    1
+   ],
+   "files": {}
+  },
+  "chunked_large": {
+   "replies": [
+    "i=8;OK"
+   ],
+   "cursor": [
+    1,
+    1
+   ],
+   "files": {}
+  },
+  "image_number": {
+   "replies": [
+    "i=1,I=13;OK",
+    "i=1,I=13;OK",
+    "i=1,I=2;EINVAL:Must not specify both image id and image number"
+   ],
+   "cursor": [
+    1,
+    1
+   ],
+   "files": {}
+  },
+  "quiet_ok": {
+   "replies": [],
+   "cursor": [
+    1,
+    1
+   ],
+   "files": {}
+  },
+  "quiet_error_q1": {
+   "replies": [
+    "i=99;ENOENT:Put command refers to non-existent image with id: 99 and number: 0"
+   ],
+   "cursor": [
+    1,
+    1
+   ],
+   "files": {}
+  },
+  "quiet_error_q2": {
+   "replies": [],
+   "cursor": [
+    1,
+    1
+   ],
+   "files": {}
+  },
+  "place_missing": {
+   "replies": [
+    "i=99;ENOENT:Put command refers to non-existent image with id: 99 and number: 0"
+   ],
+   "cursor": [
+    1,
+    1
+   ],
+   "files": {}
+  },
+  "no_id_no_reply": {
+   "replies": [],
+   "cursor": [
+    1,
+    1
+   ],
+   "files": {}
+  },
+  "quota_eviction": {
+   "replies": [
+    "i=1;OK",
+    "i=2;OK",
+    "i=3;OK",
+    "i=4;OK",
+    "i=5;OK",
+    "i=6;OK",
+    "i=7;OK",
+    "i=8;OK",
+    "i=9;OK",
+    "i=1;ENOENT:Put command refers to non-existent image with id: 1 and number: 0",
+    "i=9;OK"
+   ],
+   "cursor": [
+    1,
+    1
+   ],
+   "files": {}
+  },
+  "quota_too_large": {
+   "replies": [
+    "i=2;OK",
+    "i=1;ENOENT:Put command refers to non-existent image with id: 1 and number: 0",
+    "i=2;ENOENT:Put command refers to non-existent image with id: 2 and number: 0"
+   ],
+   "cursor": [
+    1,
+    1
+   ],
+   "files": {}
+  },
+  "anim_frame": {
+   "replies": [
+    "i=1,r=2;OK"
+   ],
+   "cursor": [
+    1,
+    1
+   ],
+   "files": {}
+  },
+  "anim_control": {
+   "replies": [],
+   "cursor": [
+    1,
+    1
+   ],
+   "files": {}
+  },
+  "anim_compose": {
+   "replies": [
+    "i=1;EINVAL:The source and destination rectangles overlap and the src and destination frames are the same"
+   ],
+   "cursor": [
+    1,
+    1
+   ],
+   "files": {}
+  },
+  "relative_placement": {
+   "replies": [
+    "i=1,p=1;OK",
+    "i=1,p=2;OK"
+   ],
+   "cursor": [
+    1,
+    1
+   ],
+   "files": {}
+  },
+  "file_png": {
+   "replies": [
+    "i=1;OK"
+   ],
+   "cursor": [
+    1,
+    1
+   ],
+   "files": {
+    "img": true
+   }
+  },
+  "file_offset": {
+   "replies": [
+    "i=1;OK"
+   ],
+   "cursor": [
+    1,
+    1
+   ],
+   "files": {}
+  },
+  "file_short": {
+   "replies": [
+    "i=1;OK"
+   ],
+   "cursor": [
+    1,
+    1
+   ],
+   "files": {}
+  },
+  "file_dev_zero": {
+   "replies": [
+    "i=1;EBADF:Failed to read image file"
+   ],
+   "cursor": [
+    1,
+    1
+   ],
+   "files": {}
+  },
+  "file_proc_link": {
+   "replies": [
+    "i=1;EBADF:Failed to read image file"
+   ],
+   "cursor": [
+    1,
+    1
+   ],
+   "files": {}
+  },
+  "file_fifo": {
+   "replies": [
+    "i=1;EBADF:Failed to read image file"
+   ],
+   "cursor": [
+    1,
+    1
+   ],
+   "files": {}
+  },
+  "file_loop": {
+   "replies": [
+    "i=1;EBADF:Failed to read image file"
+   ],
+   "cursor": [
+    1,
+    1
+   ],
+   "files": {}
+  },
+  "file_missing": {
+   "replies": [
+    "i=1;EBADF:Failed to read image file"
+   ],
+   "cursor": [
+    1,
+    1
+   ],
+   "files": {}
+  },
+  "temp_file": {
+   "replies": [
+    "i=1;OK"
+   ],
+   "cursor": [
+    1,
+    1
+   ],
+   "files": {
+    "file": false
+   }
+  },
+  "temp_no_marker": {
+   "replies": [
+    "i=1;OK"
+   ],
+   "cursor": [
+    1,
+    1
+   ],
+   "files": {
+    "file": true
+   }
+  },
+  "temp_in_home": {
+   "replies": [
+    "i=1;OK"
+   ],
+   "cursor": [
+    1,
+    1
+   ],
+   "files": {
+    "file": true
+   }
+  },
+  "shm": {
+   "replies": [
+    "i=1;OK"
+   ],
+   "cursor": [
+    1,
+    1
+   ],
+   "files": {
+    "shm": false
+   }
+  },
+  "shm_short": {
+   "replies": [
+    "i=1;EBADF:Failed to read image file"
+   ],
+   "cursor": [
+    1,
+    1
+   ],
+   "files": {
+    "shm": false
+   }
+  },
+  "shm_bad_name": {
+   "replies": [
+    "i=1;EBADF:Failed to read image file"
+   ],
+   "cursor": [
+    1,
+    1
+   ],
+   "files": {}
+  },
+  "put_cursor_move": {
+   "replies": [
+    "i=1;OK"
+   ],
+   "cursor": [
+    5,
+    9
+   ],
+   "files": {}
+  },
+  "put_no_cursor_move": {
+   "replies": [
+    "i=1;OK"
+   ],
+   "cursor": [
+    3,
+    5
+   ],
+   "files": {}
+  },
+  "put_pixel_offset": {
+   "replies": [
+    "i=1;OK"
+   ],
+   "cursor": [
+    3,
+    6
+   ],
+   "files": {}
+  },
+  "put_scrolls_region": {
+   "replies": [
+    "i=1;OK"
+   ],
+   "cursor": [
+    12,
+    3
+   ],
+   "files": {}
+  },
+  "put_replace": {
+   "replies": [
+    "i=1,p=2;OK",
+    "i=1,p=2;OK"
+   ],
+   "cursor": [
+    5,
+    5
+   ],
+   "files": {}
+  },
+  "put_source_rect": {
+   "replies": [
+    "i=1;OK"
+   ],
+   "cursor": [
+    2,
+    3
+   ],
+   "files": {}
+  },
+  "put_under_text": {
+   "replies": [
+    "i=1;OK"
+   ],
+   "cursor": [
+    1,
+    1
+   ],
+   "files": {}
+  },
+  "put_under_bg": {
+   "replies": [
+    "i=1;OK"
+   ],
+   "cursor": [
+    1,
+    1
+   ],
+   "files": {}
+  },
+  "clear_screen": {
+   "replies": [
+    "i=1;OK",
+    "i=1;ENOENT:Put command refers to non-existent image with id: 1 and number: 0"
+   ],
+   "cursor": [
+    2,
+    3
+   ],
+   "files": {}
+  },
+  "alt_screen": {
+   "replies": [
+    "i=1;ENOENT:Put command refers to non-existent image with id: 1 and number: 0",
+    "i=2;ENOENT:Put command refers to non-existent image with id: 2 and number: 0",
+    "i=1;OK",
+    "i=2;ENOENT:Put command refers to non-existent image with id: 2 and number: 0"
+   ],
+   "cursor": [
+    1,
+    1
+   ],
+   "files": {}
+  },
+  "reset": {
+   "replies": [
+    "i=1;ENOENT:Put command refers to non-existent image with id: 1 and number: 0"
+   ],
+   "cursor": [
+    1,
+    1
+   ],
+   "files": {}
+  },
+  "delete_number": {
+   "replies": [
+    ",I=7;ENOENT:Put command refers to non-existent image with id: 0 and number: 7"
+   ],
+   "cursor": [
+    1,
+    1
+   ],
+   "files": {}
+  },
+  "delete_a": {
+   "replies": [
+    "i=4;OK"
+   ],
+   "cursor": [
+    3,
+    5
+   ],
+   "files": {}
+  },
+  "delete_A": {
+   "replies": [
+    "i=4;ENOENT:Put command refers to non-existent image with id: 4 and number: 0"
+   ],
+   "cursor": [
+    3,
+    5
+   ],
+   "files": {}
+  },
+  "delete_i": {
+   "replies": [
+    "i=4;OK"
+   ],
+   "cursor": [
+    3,
+    5
+   ],
+   "files": {}
+  },
+  "delete_I": {
+   "replies": [
+    "i=4;ENOENT:Put command refers to non-existent image with id: 4 and number: 0"
+   ],
+   "cursor": [
+    3,
+    5
+   ],
+   "files": {}
+  },
+  "delete_c": {
+   "replies": [
+    "i=4;OK"
+   ],
+   "cursor": [
+    3,
+    5
+   ],
+   "files": {}
+  },
+  "delete_C": {
+   "replies": [
+    "i=4;ENOENT:Put command refers to non-existent image with id: 4 and number: 0"
+   ],
+   "cursor": [
+    3,
+    5
+   ],
+   "files": {}
+  },
+  "delete_p": {
+   "replies": [
+    "i=4;OK"
+   ],
+   "cursor": [
+    3,
+    5
+   ],
+   "files": {}
+  },
+  "delete_P": {
+   "replies": [
+    "i=4;ENOENT:Put command refers to non-existent image with id: 4 and number: 0"
+   ],
+   "cursor": [
+    3,
+    5
+   ],
+   "files": {}
+  },
+  "delete_q": {
+   "replies": [
+    "i=4;OK"
+   ],
+   "cursor": [
+    3,
+    5
+   ],
+   "files": {}
+  },
+  "delete_Q": {
+   "replies": [
+    "i=4;ENOENT:Put command refers to non-existent image with id: 4 and number: 0"
+   ],
+   "cursor": [
+    3,
+    5
+   ],
+   "files": {}
+  },
+  "delete_r": {
+   "replies": [
+    "i=4;OK"
+   ],
+   "cursor": [
+    3,
+    5
+   ],
+   "files": {}
+  },
+  "delete_R": {
+   "replies": [
+    "i=4;ENOENT:Put command refers to non-existent image with id: 4 and number: 0"
+   ],
+   "cursor": [
+    3,
+    5
+   ],
+   "files": {}
+  },
+  "delete_x": {
+   "replies": [
+    "i=4;OK"
+   ],
+   "cursor": [
+    3,
+    5
+   ],
+   "files": {}
+  },
+  "delete_X": {
+   "replies": [
+    "i=4;ENOENT:Put command refers to non-existent image with id: 4 and number: 0"
+   ],
+   "cursor": [
+    3,
+    5
+   ],
+   "files": {}
+  },
+  "delete_y": {
+   "replies": [
+    "i=4;OK"
+   ],
+   "cursor": [
+    3,
+    5
+   ],
+   "files": {}
+  },
+  "delete_Y": {
+   "replies": [
+    "i=4;ENOENT:Put command refers to non-existent image with id: 4 and number: 0"
+   ],
+   "cursor": [
+    3,
+    5
+   ],
+   "files": {}
+  },
+  "delete_z": {
+   "replies": [
+    "i=4;OK"
+   ],
+   "cursor": [
+    3,
+    5
+   ],
+   "files": {}
+  },
+  "delete_Z": {
+   "replies": [
+    "i=4;ENOENT:Put command refers to non-existent image with id: 4 and number: 0"
+   ],
+   "cursor": [
+    3,
+    5
+   ],
+   "files": {}
+  },
+  "delete_miss": {
+   "replies": [
+    "i=4;OK"
+   ],
+   "cursor": [
+    4,
+    7
+   ],
+   "files": {}
+  },
+  "delete_frames": {
+   "replies": [
+    "i=4;OK"
+   ],
+   "cursor": [
+    1,
+    1
+   ],
+   "files": {}
+  },
+  "virtual_put": {
+   "replies": [
+    "i=42;OK"
+   ],
+   "cursor": [
+    3,
+    5
+   ],
+   "files": {}
+  },
+  "virtual_quiet": {
+   "replies": [],
+   "cursor": [
+    1,
+    1
+   ],
+   "files": {}
+  },
+  "virtual_survives_delete_all": {
+   "replies": [
+    "i=42;OK"
+   ],
+   "cursor": [
+    1,
+    1
+   ],
+   "files": {}
+  },
+  "placeholder_cells": {
+   "replies": [],
+   "cursor": [
+    3,
+    7
+   ],
+   "files": {}
+  }
+ }
+}

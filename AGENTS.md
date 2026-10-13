@@ -36,7 +36,7 @@ Warnings fail the build (`werror=true` in `meson.build`). Fix the cause of each 
 
 To change the log output, run `bld/paw -d info`. The log levels are `info` (most output), `warning` (default), `error`, and `none`.
 
-CI (`.woodpecker.yaml`) runs these checks from the repository root. `codespell` checks spelling in all files. `mypy` (strict on `scripts/`) and `ruff check` check Python:
+CI (`.github/workflows/ci.yml`) runs these checks from the repository root. `codespell` checks spelling in all files. `mypy` (strict on `scripts/`) and `ruff check` check Python:
 
 ```sh
 codespell
@@ -112,6 +112,13 @@ These rules come from `openspec/changes/archive/2026-10-12-rebrand-paw/design.md
 - Write commit subjects as `area: lowercase summary`, for example `grid: reflow: fix two issues when truncating wide characters`.
 - Add user-visible changes under `## Unreleased` in CHANGELOG.md.
 - The config reference is `doc/foot.ini.5.scd`. The example config is `foot.ini`.
+- Keep the cyclomatic complexity (CCN) of every function in the fork-owned files at 25 or less. The fork-owned files are the files that the fork added, for example `kitty-*.c` and `kitty-*.h`. Standards reviews must check this with `lizard`:
+
+  ```sh
+  lizard -C 25 -w kitty-*.c kitty-*.h
+  ```
+
+  Do not apply this rule to upstream files, for example `csi.c`, `render.c`, `terminal.c`, and `vt.c`. Ignore every `lizard` result for a function in an upstream file, even if the change adds a hook line to that function. Do not split upstream functions, and do not report them in a review (see Fork rules).
 
 ## Upstream AI policy
 

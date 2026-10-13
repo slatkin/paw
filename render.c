@@ -36,6 +36,7 @@
 #include "grid.h"
 #include "ime.h"
 #include "input.h"
+#include "kitty-graphics.h"
 #include "quirks.h"
 #include "search.h"
 #include "selection.h"
@@ -867,7 +868,11 @@ render_cell(struct terminal *term, pixman_image_t *pix,
     char32_t base = cell->wc;
     int cell_cols = 1;
 
-    if (base != 0) {
+    /* Kitty graphics: a U+10EEEE placeholder cell draws an image
+     * slice instead of a glyph. */
+    const bool kitty_placeholder = kitty_cell_is_placeholder(term, cell);
+
+    if (base != 0 && !kitty_placeholder) {
         if (unlikely(
                 /* Classic box drawings */
                 (base >= GLYPH_BOX_DRAWING_FIRST &&
@@ -1032,6 +1037,15 @@ render_cell(struct terminal *term, pixman_image_t *pix,
     pixman_image_fill_rectangles(
         PIXMAN_OP_SRC, pix, &bg, 1,
         &(pixman_rectangle16_t){x, y, cell_cols * width, height});
+
+    /* Kitty graphics: z < 0 placements are under the glyphs, over the
+     * background. */
+    kitty_render_underlay(term, pix, row, row_no, col, x, y);
+
+    /* Kitty graphics: the placeholder image slice is drawn over the
+     * background, like an underlay. */
+    if (kitty_placeholder)
+        kitty_render_placeholder(term, pix, row, col, x, y);
 
     if (cell->attrs.blink && term->blink.fd < 0) {
         /* TODO: use a custom lock for this? */
@@ -3553,6 +3567,9 @@ grid_render(struct terminal *term)
 
     render_sixel_images(term, buf->pix[0], &damage, &cursor);
 
+    /* Kitty graphics: build the scaled-image cache before the workers
+     * start. */
+    kitty_render_prepass(term);
 
     if (term->render.workers.count > 0) {
         mtx_lock(&term->render.workers.lock);
@@ -3591,6 +3608,9 @@ grid_render(struct terminal *term)
             sem_wait(&term->render.workers.done);
         term->render.workers.buf = NULL;
     }
+
+    /* Kitty graphics: overlay z >= 0 placements on top of the text. */
+    kitty_render_overlay(term, buf->pix[0], &damage);
 
     for (size_t i = 0; i < term->render.workers.count; i++)
         pixman_region32_union(&damage, &damage, &buf->dirty[i + 1]);
@@ -4393,6 +4413,7 @@ delayed_reflow_of_normal_grid(struct terminal *term)
 
     /* Reflow the original (since before the resize was started) grid,
      * to the *current* dimensions */
+    kitty_reflow_begin(term);
     grid_resize_and_reflow(
         term->interactive_resizing.grid, term,
         term->interactive_resizing.new_rows, term->normal.num_cols,
@@ -4423,6 +4444,7 @@ delayed_reflow_of_normal_grid(struct terminal *term)
 
     tll_free(term->normal.scroll_damage);
     sixel_reflow_grid(term, &term->normal);
+    kitty_reflow_end(term);
 
     if (term->grid == &term->normal) {
         term_damage_view(term);
@@ -4912,6 +4934,7 @@ render_resize(struct terminal *term, int width, int height, uint8_t opts)
             &term->selection.coords.end,
         };
 
+        kitty_reflow_begin(term);
         grid_resize_and_reflow(
             &term->normal, term, new_normal_grid_rows, new_cols, old_normal_rows, new_rows,
             term->selection.coords.end.row >= 0 ? ALEN(tracking_points) : 0,
@@ -4930,6 +4953,7 @@ render_resize(struct terminal *term, int width, int height, uint8_t opts)
     term->rows = new_rows;
 
     sixel_reflow(term);
+    kitty_reflow_end(term);
 
     LOG_DBG("resized: grid: cols=%d, rows=%d "
             "(left-margin=%d, right-margin=%d, top-margin=%d, bottom-margin=%d)",

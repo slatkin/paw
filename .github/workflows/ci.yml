@@ -1,0 +1,89 @@
+name: CI
+
+# Runs the checks from AGENTS.md on each pull request and each push to master.
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    # Pinned dated snapshot of the Arch base-devel image, as in mbv.
+    container: archlinux/archlinux:base-devel-20260818.0.575430
+    timeout-minutes: 45
+
+    steps:
+      # The image ships no git. Install it before checkout so that
+      # actions/checkout makes a real clone.
+      - name: Install dependencies
+        run: |
+          pacman_retry() {
+            for attempt in 1 2 3; do
+              "$@" && return 0
+              pacman -Syy --noconfirm
+              sleep $((attempt * 10))
+            done
+            "$@"
+          }
+          pacman_retry pacman -Syu --noconfirm
+          pacman_retry pacman -S --noconfirm --needed \
+            git just meson ninja pkgconf clang scdoc ncurses \
+            libxkbcommon pixman freetype2 fontconfig harfbuzz libutf8proc \
+            wayland wayland-protocols fcft tllist check \
+            ttf-hack noto-fonts-emoji \
+            codespell mypy ruff python-pip
+          # The Arch repositories do not package lizard. Pin the version tested locally.
+          pip install --break-system-packages --root-user-action=ignore lizard==1.24.1
+
+      - uses: actions/checkout@v7
+        with:
+          # Full history, so the tidy step can diff against the base branch.
+          fetch-depth: 0
+
+      # The checkout belongs to the runner user, but the job runs as root in
+      # the container. Git refuses to read it without this entry, and the
+      # build reads it to generate version.h.
+      - name: Trust the checkout
+        run: git config --global --add safe.directory "${GITHUB_WORKSPACE}"
+
+      - name: Check
+        run: just check
+
+      - name: Tidy changed C files
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          mapfile -t changed < <(git diff --name-only --diff-filter=d "origin/${GITHUB_BASE_REF}...HEAD" -- '*.c')
+          just tidy "${changed[@]}"
+
+      - name: Python checks
+        run: |
+          mypy
+          ruff check
+
+      - name: Lizard complexity gate
+        shell: bash
+        run: |
+          # Gate fork-owned files only. Upstream files are exempt (AGENTS.md).
+          shopt -s nullglob
+          files=(kitty-*.c kitty-*.h)
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "no fork-owned files to check"
+            exit 0
+          fi
+          lizard -C 25 -w "${files[@]}"
+
+      - name: Debug startup tests
+        # Debug builds run the UNITTEST blocks at startup.
+        run: bld/paw --version
