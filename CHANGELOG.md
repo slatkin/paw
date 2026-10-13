@@ -73,6 +73,12 @@
 
 ## Unreleased
 ### Added
+
+* Kitty graphics protocol support: image transmission (direct, chunked,
+  zlib, PNG, file, temp file, and shared memory), placements, Unicode
+  placeholders, deletion, scrolling, and a 320 MB per-screen quota.
+  Animation and relative placements are not supported.
+
 ### Changed
 
 * Cells with a non-default background colors, but otherwise empty, are
