@@ -790,7 +790,7 @@ are erased like other text cells.
   screen. `CSI 3 J` also deletes the placements in the scrollback. In both
   cases paw then frees every image that no placement refers to any more. A
   later `a=p` for a freed image replies `ENOENT`.
-* Entering the alternate screen deletes all placements and images of the
+* Leaving the alternate screen deletes all placements and images of the
   alternate screen. The main screen keeps its images.
 * A terminal reset (RIS) deletes every placement and image on both screens.
 * Scrolling moves placements with the text. paw deletes a placement whose top
