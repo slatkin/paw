@@ -302,7 +302,7 @@ kitty_placement_delete(struct terminal *term, const struct kitty_command *cmd)
     tll_free(touched);
 }
 
-
+#ifndef NDEBUG
 #include "kitty-test.h"
 
 UNITTEST
@@ -375,3 +375,5 @@ UNITTEST
 
     KITTY_TEST_FINI(term);
 }
+
+#endif /* !NDEBUG */
