@@ -52,6 +52,12 @@ jobs:
           # Full history, so the tidy step can diff against the base branch.
           fetch-depth: 0
 
+      # The checkout belongs to the runner user, but the job runs as root in
+      # the container. Git refuses to read it without this entry, and the
+      # build reads it to generate version.h.
+      - name: Trust the checkout
+        run: git config --global --add safe.directory "${GITHUB_WORKSPACE}"
+
       - name: Check
         run: just check
 
