@@ -36,7 +36,7 @@ Warnings fail the build (`werror=true` in `meson.build`). Fix the cause of each 
 
 To change the log output, run `bld/paw -d info`. The log levels are `info` (most output), `warning` (default), `error`, and `none`.
 
-CI (`.woodpecker.yaml`) runs these checks from the repository root. `codespell` checks spelling in all files. `mypy` (strict on `scripts/`) and `ruff check` check Python:
+CI (`.github/workflows/ci.yml`) runs these checks from the repository root. `codespell` checks spelling in all files. `mypy` (strict on `scripts/`) and `ruff check` check Python:
 
 ```sh
 codespell

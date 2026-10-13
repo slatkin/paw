@@ -1,7 +1,6 @@
 name: CI
 
 # Runs the checks from AGENTS.md on each pull request and each push to master.
-# .woodpecker.yaml still runs until this workflow has passed on GitHub.
 
 on:
   pull_request:
