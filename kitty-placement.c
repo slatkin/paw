@@ -262,6 +262,7 @@ kitty_placement_put(
 
     /* Replace an existing placement with the same (image id, placement
      * id) pair. A placement id of 0 never replaces. */
+    bool replaced = false;
     tll_foreach(store->placements, it) {
         if (p.placement_id.v == 0 ||
             it->item.image_id.v != p.image_id.v ||
@@ -274,19 +275,23 @@ kitty_placement_put(
          * sync. */
         kitty_placement_unlink(store, &it->item);
         kitty_placement_remove(store, it);
+        replaced = true;
         break;
     }
 
-    /* Bound the memory use. A full screen drops its oldest placement. */
-    if ((size_t)tll_length(store->placements) >= KITTY_MAX_PLACEMENTS) {
+    /*
+     * Bound the memory use. A new placement on a full screen drops the
+     * oldest one. A replacement does not add a placement, so it drops none.
+     */
+    if (!replaced &&
+        (size_t)tll_length(store->placements) >= KITTY_MAX_PLACEMENTS)
+    {
         LOG_WARN("kitty graphics: placement limit (%d) reached, "
                  "dropping the oldest placement", KITTY_MAX_PLACEMENTS);
-        tll_foreach(store->placements, it) {
-            kitty_placement_dirty(term, &it->item);
-            kitty_placement_unlink(store, &it->item);
-            kitty_placement_remove(store, it);
-            break;
-        }
+        struct kitty_placement *oldest = &tll_front(store->placements);
+        kitty_placement_dirty(term, oldest);
+        kitty_placement_unlink(store, oldest);
+        kitty_placement_remove(store, store->placements.head);
     }
 
     tll_push_back(store->placements, p);
