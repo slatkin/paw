@@ -1,0 +1,25 @@
+# Kitty graphics hooks: one "file symbol" pair per line.
+# Each symbol is a call or a state name that the kitty graphics feature adds to
+# an upstream file. tools/check-kitty-hooks.sh checks that it still appears there.
+# It does not check the vt.c range edits, which change a state table, not a name.
+csi.c kitty_alt_screen_clear
+csi.c kitty_clear_visible
+render.c kitty_cell_is_placeholder
+render.c kitty_render_underlay
+render.c kitty_render_placeholder
+render.c kitty_render_prepass
+render.c kitty_render_overlay
+render.c kitty_reflow_begin
+render.c kitty_reflow_end
+terminal.c kitty_init
+terminal.c kitty_fini
+terminal.c kitty_cell_size_changed
+terminal.c kitty_alt_screen_clear
+terminal.c kitty_reset
+terminal.c kitty_scrollback_clear
+terminal.c kitty_scroll_up
+terminal.c kitty_scroll_down
+vt.c kitty_apc_start
+vt.c kitty_apc_put
+vt.c kitty_apc_end
+vt.c STATE_APC_STRING
