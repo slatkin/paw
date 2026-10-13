@@ -20,7 +20,7 @@ if [ -d "${src_dir}/.git" ] && command -v git > /dev/null; then
     cd "${src_dir}"
 
     if git describe --tags  > /dev/null 2>&1; then
-        git_version=$(git describe --always --tags)
+        git_version=$(git describe --always --tags | sed 's/^v//')
     else
         # No tags available, happens in e.g. CI builds
         git_version="${default_version}"
