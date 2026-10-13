@@ -160,8 +160,8 @@ The other symbols belong to the upstream kitty keyboard protocol
 `kitty_kbd_protocol`), the kitty notification and text-size code in `osc.c`,
 and `verify_kitty_id_is_valid`. They need no fork action.
 
-`base64.c` now accepts unpadded base64 input, because clients such as
-`kitten` omit the `=` padding. The `kitty-*.c` files, `libpng`, and `zlib`
+`kitty_base64_decode()` in `kitty-image.c` accepts unpadded base64 input,
+because clients such as `kitten` omit the `=` padding. The `kitty-*.c` files, `libpng`, and `zlib`
 are added to `meson.build`.
 
 
