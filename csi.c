@@ -515,6 +515,9 @@ decset_decrst(struct terminal *term, unsigned param, bool enable)
 
             tll_free(term->normal.scroll_damage);
             term_erase(term, 0, 0, term->rows - 1, term->cols - 1);
+
+            /* Delete the kitty images of the alternate screen */
+            kitty_alt_screen_clear(term);
         }
 
         else if (!enable && term->grid == &term->alt) {

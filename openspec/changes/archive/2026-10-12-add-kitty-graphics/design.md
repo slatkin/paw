@@ -87,7 +87,7 @@ Hooks (each next to the matching sixel call):
 | `term_scroll_reverse_partial` | `kitty_scroll_down(term, region, rows)` | Mirror of the above |
 | `csi.c` ED 2 | `kitty_clear_visible(term)` | Delete visible placements (not virtual ones), then free every image of the screen that has no placement left, including one that never had a placement. |
 | `csi.c` ED 3 | `kitty_clear_visible(term)`, then `term_erase_scrollback` → `kitty_scrollback_clear(term)` | As ED 2, and also delete the placements that are not on screen (not virtual ones). |
-| `csi.c` `decset_decrst` alt-screen exit, next to "Delete all sixel images on the alt screen" | `kitty_alt_screen_clear(term)` | Delete the alternate screen images and placements. foot clears alt sixels on exit, so the alt screen is always empty on the next entry. The spec requires the alt screen to be empty after exit. |
+| `csi.c` `decset_decrst` alt-screen entry and exit, next to "Delete all sixel images on the alt screen" (exit) | `kitty_alt_screen_clear(term)` | Delete the alternate screen images and placements. foot clears alt sixels on exit, so the alt screen is always empty on the next entry. This gives the result the spec requires for entry. |
 | `term_reset` | `kitty_reset(term)` | Delete all |
 | `term_set_fonts`, next to `sixel_cell_size_changed` | `kitty_cell_size_changed(term)` | Drop the scaled caches. Spans stay. |
 | `term_destroy`, next to `sixel_fini` | `kitty_fini(term)` | Free all |

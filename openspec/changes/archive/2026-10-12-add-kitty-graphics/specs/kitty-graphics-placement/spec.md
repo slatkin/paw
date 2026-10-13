@@ -59,7 +59,7 @@ A placement with `z >= 0` SHALL be drawn over the text. A placement with `-10737
 - **THEN** the red cell shows red, and the default cell shows the image
 
 ### Requirement: Deletion
-`a=d` SHALL delete placements as the `d` key selects: `a` (default; all visible), `i` (image id, and placement id when `p` is given), `n` (newest image with number `I`), `c` (at the cursor cell), `p` (at cell `x,y`, 1-based), `q` (at cell `x,y` with z-index `z`), `r` (image ids from `x` to `y`), `x` (in column `x`), `y` (in row `y`), `z` (with z-index `z`). Uppercase variants SHALL also delete the image data of each image that has no placement left after the command. An image that never had a placement is deleted only by `I`, `N`, and `R` (without `p`). The other uppercase variants SHALL leave such an image stored.
+`a=d` SHALL delete placements as the `d` key selects: `a` (default; all visible), `i` (image id, and placement id when `p` is given), `n` (newest image with number `I`), `c` (at the cursor cell), `p` (at cell `x,y`, 1-based), `q` (at cell `x,y` with z-index `z`), `r` (image ids from `x` to `y`), `x` (in column `x`), `y` (in row `y`), `z` (with z-index `z`). Uppercase variants SHALL also delete the image data when no placement of the image is left.
 
 #### Scenario: Delete all visible
 - **WHEN** a program sends `a=d`
@@ -68,10 +68,6 @@ A placement with `z >= 0` SHALL be drawn over the text. A placement with `-10737
 #### Scenario: Delete and free
 - **WHEN** image 4 has one placement and a program sends `a=d,d=I,i=4`
 - **THEN** the placement disappears and image 4 no longer exists
-
-#### Scenario: Uppercase keeps an image that was never placed
-- **WHEN** image 5 was transmitted but never placed, and a program sends `a=d,d=A`
-- **THEN** image 5 still exists
 
 #### Scenario: Delete at a cell
 - **WHEN** two placements overlap the cell at column 3, row 4 and a program sends `a=d,d=p,x=3,y=4`
@@ -108,7 +104,7 @@ Placements SHALL move with the text when the screen scrolls, into and through th
 - **THEN** the placement moves up one row with the text below the cursor
 
 ### Requirement: Clear, alternate screen, and reset
-Clear screen (`CSI 2 J`) SHALL delete all placements that are visible on screen. `CSI 3 J` SHALL also delete all placements in the scrollback. Neither sequence SHALL delete a virtual placement. After either sequence, paw SHALL delete each image of the current screen that no placement refers to any more, including an image that never had a placement. Leaving the alternate screen SHALL delete all placements and images of the alternate screen. Main and alternate screens SHALL each have their own images and placements. A terminal reset (RIS) SHALL delete all placements and images.
+Clear screen (`CSI 2 J`) SHALL delete all placements that are visible on screen. `CSI 3 J` SHALL also delete all placements in the scrollback. Neither sequence SHALL delete a virtual placement. After either sequence, paw SHALL delete each image of the current screen that no placement refers to any more, including an image that never had a placement. Entering the alternate screen SHALL delete all placements and images of the alternate screen. Main and alternate screens SHALL each have their own images and placements. A terminal reset (RIS) SHALL delete all placements and images.
 
 #### Scenario: Clear command
 - **WHEN** an image is on screen and the user runs `clear`

@@ -205,15 +205,6 @@ delete_matches(
     }
 }
 
-static void
-delete_image_if_unused(
-    struct kitty_image_store *images, struct kitty_image_id id)
-{
-    struct kitty_image *image = kitty_image_store_find_id(images, id);
-    if (image != NULL && image->placements == 0)
-        kitty_image_store_delete_id(images, id);
-}
-
 void
 kitty_placement_delete(struct terminal *term, const struct kitty_command *cmd)
 {
@@ -237,8 +228,6 @@ kitty_placement_delete(struct terminal *term, const struct kitty_command *cmd)
             images, KITTY_IMAGE_NUMBER(cmd->number.value))
         : NULL;
 
-    tll(struct kitty_image_id) touched = tll_init();
-
     tll_foreach(store->placements, it) {
         struct kitty_placement *p = &it->item;
         if (!delete_matches(term, cmd, p, number_image))
@@ -246,54 +235,16 @@ kitty_placement_delete(struct terminal *term, const struct kitty_command *cmd)
 
         /* Repaint the cells the placement covered. */
         kitty_placement_dirty(term, p);
-        tll_push_back(touched, p->image_id);
         kitty_placement_unlink(store, p);
         kitty_placement_remove(store, it);
     }
 
     if (uppercase) {
         /*
-         * Kitty frees an image with no placement left for I, N and R
-         * even when no placement matched.
+         * An uppercase variant also deletes the image data of every
+         * image that has no placement left.
          */
-        if (!cmd->placement_id.set) {
-            switch (sel) {
-            case 'I':
-                if (cmd->id.set)
-                    delete_image_if_unused(images, KITTY_IMAGE_ID(cmd->id.value));
-                break;
-
-            case 'N':
-                if (number_image != NULL)
-                    delete_image_if_unused(images, number_image->id);
-                break;
-
-            case 'R':
-                if (cmd->x.set && cmd->y.set) {
-                    tll(struct kitty_image_id) range = tll_init();
-                    tll_foreach(images->images, img_it) {
-                        const struct kitty_image_id id = img_it->item.id;
-                        if ((int64_t)cmd->x.value <= (int64_t)id.v &&
-                            (int64_t)id.v <= (int64_t)cmd->y.value)
-                        {
-                            tll_push_back(range, id);
-                        }
-                    }
-                    tll_foreach(range, r)
-                        delete_image_if_unused(images, r->item);
-                    tll_free(range);
-                }
-                break;
-
-            default:
-                break;
-            }
-        }
-
-        tll_foreach(touched, t)
-            delete_image_if_unused(images, t->item);
+        kitty_image_store_delete_unreferenced(images);
     }
-
-    tll_free(touched);
 }
 
