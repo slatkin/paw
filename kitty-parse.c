@@ -1,6 +1,7 @@
 #include "kitty-graphics-internal.h"
 
 #include <ctype.h>
+#include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -102,6 +103,130 @@ parse_medium(char c, enum kitty_medium *out)
 }
 
 /*
+ * Keys whose value is a plain optional number. Each entry stores the
+ * kind of its field and the offset of the field in the command.
+ */
+enum kitty_number_kind { KITTY_NUMBER_U32, KITTY_NUMBER_I32 };
+
+struct kitty_number_key {
+    char key;
+    enum kitty_number_kind kind;
+    size_t offset;
+};
+
+static const struct kitty_number_key number_keys[] = {
+    {'s', KITTY_NUMBER_U32, offsetof(struct kitty_command, width)},
+    {'v', KITTY_NUMBER_U32, offsetof(struct kitty_command, height)},
+    {'i', KITTY_NUMBER_U32, offsetof(struct kitty_command, id)},
+    {'I', KITTY_NUMBER_U32, offsetof(struct kitty_command, number)},
+    {'p', KITTY_NUMBER_U32, offsetof(struct kitty_command, placement_id)},
+    {'c', KITTY_NUMBER_U32, offsetof(struct kitty_command, cols)},
+    {'r', KITTY_NUMBER_U32, offsetof(struct kitty_command, rows)},
+    {'x', KITTY_NUMBER_I32, offsetof(struct kitty_command, x)},
+    {'y', KITTY_NUMBER_I32, offsetof(struct kitty_command, y)},
+    {'w', KITTY_NUMBER_U32, offsetof(struct kitty_command, w)},
+    {'h', KITTY_NUMBER_U32, offsetof(struct kitty_command, h)},
+    {'X', KITTY_NUMBER_I32, offsetof(struct kitty_command, X)},
+    {'Y', KITTY_NUMBER_I32, offsetof(struct kitty_command, Y)},
+    {'z', KITTY_NUMBER_I32, offsetof(struct kitty_command, z)},
+    {'C', KITTY_NUMBER_U32, offsetof(struct kitty_command, cursor)},
+    {'q', KITTY_NUMBER_U32, offsetof(struct kitty_command, quiet)},
+    {'m', KITTY_NUMBER_U32, offsetof(struct kitty_command, more)},
+    {'O', KITTY_NUMBER_U32, offsetof(struct kitty_command, offset)},
+    {'S', KITTY_NUMBER_U32, offsetof(struct kitty_command, size)},
+    {'U', KITTY_NUMBER_U32, offsetof(struct kitty_command, unicode_placeholder)},
+    {'P', KITTY_NUMBER_U32, offsetof(struct kitty_command, parent_id)},
+    {'Q', KITTY_NUMBER_U32, offsetof(struct kitty_command, parent_placement)},
+};
+
+static const struct kitty_number_key *
+find_number_key(char key)
+{
+    for (size_t i = 0; i < sizeof(number_keys) / sizeof(number_keys[0]); i++) {
+        if (number_keys[i].key == key)
+            return &number_keys[i];
+    }
+    return NULL;
+}
+
+static bool
+parse_number_value(
+    const struct kitty_number_key *k, const char *value, size_t value_len,
+    struct kitty_command *cmd)
+{
+    void *field = (char *)cmd + k->offset;
+
+    switch (k->kind) {
+    case KITTY_NUMBER_U32:
+        return parse_opt_u32(value, value_len, field);
+    case KITTY_NUMBER_I32:
+        return parse_opt_i32(value, value_len, field);
+    }
+
+    BUG("unreachable number key kind");
+}
+
+/* What parse_special_key() did with a key. */
+enum kitty_key_result {
+    KITTY_KEY_OK,      /* Known key, parsed without error. */
+    KITTY_KEY_IGNORED, /* Unknown key. */
+    KITTY_KEY_ERROR,   /* Known key, malformed value. */
+};
+
+/*
+ * Keys with a value format of their own.
+ */
+static enum kitty_key_result
+parse_special_key(
+    char key, const char *value, size_t value_len, struct kitty_command *cmd)
+{
+    switch (key) {
+    case 'a':
+        if (value_len != 1 || !parse_action(value[0], &cmd->action))
+            return KITTY_KEY_ERROR;
+        break;
+
+    case 'f': {
+        uint32_t format;
+        if (!parse_u32(value, value_len, &format) ||
+            (format != KITTY_FORMAT_RGB &&
+             format != KITTY_FORMAT_RGBA &&
+             format != KITTY_FORMAT_PNG))
+        {
+            return KITTY_KEY_ERROR;
+        }
+        cmd->format = (enum kitty_format)format;
+        break;
+    }
+
+    case 't':
+        if (value_len != 1 || !parse_medium(value[0], &cmd->medium))
+            return KITTY_KEY_ERROR;
+        break;
+
+    case 'o':
+        if (value_len != 1 || value[0] != 'z')
+            return KITTY_KEY_ERROR;
+        cmd->compression = KITTY_COMPRESSION_ZLIB;
+        break;
+
+    case 'd':
+        /* A NUL byte cannot be told from an absent d key, so a=d
+         * would delete every visible placement. Reject it. */
+        if (value_len != 1 || value[0] == '\0')
+            return KITTY_KEY_ERROR;
+        cmd->delete_spec = value[0];
+        break;
+
+    default:
+        /* Unknown key: ignore it and handle the rest. */
+        return KITTY_KEY_IGNORED;
+    }
+
+    return KITTY_KEY_OK;
+}
+
+/*
  * Parse the comma-separated key=value list. Unknown keys are ignored.
  * A value that is not valid for a known key fails the whole command.
  */
@@ -131,158 +256,15 @@ parse_control_data(const char *data, size_t len, struct kitty_command *cmd)
         const char *value = eq + 1;
         const size_t value_len = item_len - (size_t)(value - item);
 
-        switch (key) {
-        case 'a':
-            if (value_len != 1 || !parse_action(value[0], &cmd->action))
+        const struct kitty_number_key *number_key = find_number_key(key);
+        if (number_key != NULL) {
+            if (!parse_number_value(number_key, value, value_len, cmd))
                 return false;
-            break;
-
-        case 'f': {
-            uint32_t format;
-            if (!parse_u32(value, value_len, &format) ||
-                (format != KITTY_FORMAT_RGB &&
-                 format != KITTY_FORMAT_RGBA &&
-                 format != KITTY_FORMAT_PNG))
-            {
-                return false;
-            }
-            cmd->format = (enum kitty_format)format;
-            break;
+            continue;
         }
 
-        case 't':
-            if (value_len != 1 || !parse_medium(value[0], &cmd->medium))
-                return false;
-            break;
-
-        case 'o':
-            if (value_len != 1 || value[0] != 'z')
-                return false;
-            cmd->compression = KITTY_COMPRESSION_ZLIB;
-            break;
-
-        case 's':
-            if (!parse_opt_u32(value, value_len, &cmd->width))
-                return false;
-            break;
-
-        case 'v':
-            if (!parse_opt_u32(value, value_len, &cmd->height))
-                return false;
-            break;
-
-        case 'i':
-            if (!parse_opt_u32(value, value_len, &cmd->id))
-                return false;
-            break;
-
-        case 'I':
-            if (!parse_opt_u32(value, value_len, &cmd->number))
-                return false;
-            break;
-
-        case 'p':
-            if (!parse_opt_u32(value, value_len, &cmd->placement_id))
-                return false;
-            break;
-
-        case 'c':
-            if (!parse_opt_u32(value, value_len, &cmd->cols))
-                return false;
-            break;
-
-        case 'r':
-            if (!parse_opt_u32(value, value_len, &cmd->rows))
-                return false;
-            break;
-
-        case 'x':
-            if (!parse_opt_i32(value, value_len, &cmd->x))
-                return false;
-            break;
-
-        case 'y':
-            if (!parse_opt_i32(value, value_len, &cmd->y))
-                return false;
-            break;
-
-        case 'w':
-            if (!parse_opt_u32(value, value_len, &cmd->w))
-                return false;
-            break;
-
-        case 'h':
-            if (!parse_opt_u32(value, value_len, &cmd->h))
-                return false;
-            break;
-
-        case 'X':
-            if (!parse_opt_i32(value, value_len, &cmd->X))
-                return false;
-            break;
-
-        case 'Y':
-            if (!parse_opt_i32(value, value_len, &cmd->Y))
-                return false;
-            break;
-
-        case 'z':
-            if (!parse_opt_i32(value, value_len, &cmd->z))
-                return false;
-            break;
-
-        case 'C':
-            if (!parse_opt_u32(value, value_len, &cmd->cursor))
-                return false;
-            break;
-
-        case 'q':
-            if (!parse_opt_u32(value, value_len, &cmd->quiet))
-                return false;
-            break;
-
-        case 'm':
-            if (!parse_opt_u32(value, value_len, &cmd->more))
-                return false;
-            break;
-
-        case 'd':
-            /* A NUL byte cannot be told from an absent d key, so a=d
-             * would delete every visible placement. Reject it. */
-            if (value_len != 1 || value[0] == '\0')
-                return false;
-            cmd->delete_spec = value[0];
-            break;
-
-        case 'O':
-            if (!parse_opt_u32(value, value_len, &cmd->offset))
-                return false;
-            break;
-
-        case 'S':
-            if (!parse_opt_u32(value, value_len, &cmd->size))
-                return false;
-            break;
-
-        case 'U':
-            if (!parse_opt_u32(value, value_len, &cmd->unicode_placeholder))
-                return false;
-            break;
-
-        case 'P':
-            if (!parse_opt_u32(value, value_len, &cmd->parent_id))
-                return false;
-            break;
-
-        case 'Q':
-            if (!parse_opt_u32(value, value_len, &cmd->parent_placement))
-                return false;
-            break;
-
-        default:
-            /* Unknown key: ignore it and handle the rest. */
-            break;
-        }
+        if (parse_special_key(key, value, value_len, cmd) == KITTY_KEY_ERROR)
+            return false;
     }
 
     return true;
